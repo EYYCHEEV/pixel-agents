@@ -20,6 +20,8 @@ Thumbs.db
 # E2E test artifacts
 test-results/
 playwright-report/
+allure-results/
+allure-report/
 
 # Build artifacts
 *.vsix
@@ -32,6 +34,11 @@ playwright-report/
 # Project-specific
 .claude/
 /sprites-export
+.vercel/
 
 # Local notes (not for commit)
 /notes/
+/docs/e2e-*.md
+!/docs/e2e-claude-mocking.md
+
+.playwright-mcp/

@@ -727,6 +727,7 @@ export class HookEventHandler {
     agent.isWaiting = true;
     agent.permissionSent = false;
     agent.hadToolsInTurn = false;
+    agent.currentHookToolId = undefined;
     this.agents.broadcast({
       type: 'agentStatus',
       id: agentId,

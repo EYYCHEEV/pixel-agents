@@ -636,6 +636,7 @@ export function scanForTeammateFiles(
       existingTeammate.lastDataAt = Date.now();
       existingTeammate.linesProcessed = 0;
       existingTeammate.isWaiting = false;
+      existingTeammate.teamUsesTmux = parentAgent?.teamUsesTmux;
       startFileWatching(
         existingTeammate.id,
         file,
@@ -682,6 +683,7 @@ export function scanForTeammateFiles(
       agentName: teammateName,
       leadAgentId: parentAgentId,
       teamName: parentAgent?.teamName,
+      teamUsesTmux: parentAgent?.teamUsesTmux,
     };
 
     agents.set(id, agent);

@@ -1,0 +1,40 @@
+{
+  "name": "Pixel Agents",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "editorconfig.editorconfig"
+      ],
+      "settings": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true,
+        "[json]": {
+          "editor.formatOnSave": false
+        },
+        "[markdown]": {
+          "editor.formatOnSave": false
+        },
+        "typescript.tsdk": "node_modules/typescript/lib"
+      }
+    }
+  },
+  // Install workspace dependencies and build a VSIX once when the container is created.
+  // Claude Code CLI is intentionally omitted — install it manually after the container starts.
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  // Install the packaged extension into the remote VS Code server only when it is
+  // missing or the installed version differs from package.json.
+  "postAttachCommand": "bash .devcontainer/post-attach.sh",
+  "forwardPorts": [5173],
+  // Persist ~/.claude/ (credentials and session JSONL files) across container rebuilds.
+  "mounts": [
+    "source=pixel-agents-claude-data,target=/root/.claude,type=volume"
+  ]
+}
