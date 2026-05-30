@@ -1,0 +1,161 @@
+# Pixel Agents e2e tests
+
+Playwright end-to-end tests for the VS Code extension and the standalone `npx pixel-agents` server. This README is the single source of truth for what's e2e-tested, what's not, and how to run the suite.
+
+## What this suite covers
+
+Behavioral overview by area. Each area corresponds to a `test.describe` block in the spec files, an `@area:` tag on each test title, and an Allure `epic` label.
+
+### Spawn paths (`@area:spawn`)
+
+Agents being created and adopted. Covers internal terminals launched by clicking `+ Agent`, external Claude sessions adopted by the hook server or the JSONL scanner, basic Task subagent appearance/despawn, and lead+teammate routing for inline and tmux team modes.
+
+### Lifecycle regressions (`@area:lifecycle`)
+
+Edge cases that historically caused agent-character desync: `/clear`, `--resume`, X-button close, dismissal cooldown, parallel sub-agents, teammate add/remove, rapid `/clear` followed by a new tool, late resume after stale cleanup.
+
+### Cross-cutting checks (`@area:cross-cutting`)
+
+Invariants that should hold across every spawn path: tool status text matches the active tool name, sound chimes fire on the right events, restored agents skip the matrix spawn animation, hook installer preserves third-party hooks, settings persist across webview reload, sub-agent permission timer fires, layout editor enter/paint/save/exit smoke.
+
+### Teams routing (`@area:teams`)
+
+Lead and teammate tool routing in both inline and tmux team modes, internal and external.
+
+### Hooks-off matrix (`@area:matrix`)
+
+Every spawn permutation (internal vs external origin × basic vs inline-teammate vs tmux-teammate mode) re-verified against the heuristic JSONL-polling path with the hook server disabled. Confirms the polling-based detection produces the same agent state as the hook-driven path.
+
+### Standalone server (`@area:standalone`)
+
+The `npx pixel-agents` CLI path: hook-driven lifecycle propagates from the local server into the browser SPA via the single `/ws` WebSocket endpoint.
+
+## What's NOT covered (gaps + deferred)
+
+Scenarios that exist as product behavior but are not in the automated suite. PRs that close a gap should remove the corresponding row.
+
+| Scenario                                                                                 | Why not automated                                                                                                                            | Tracked                      |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| Multi-window `layout.json` cross-sync                                                    | Needs two VS Code instances simultaneously; fixture work                                                                                     | none                         |
+| External asset directory add/remove via Settings                                         | Needs bundled test asset packs                                                                                                               | none                         |
+| Bypass-permissions startup flag                                                          | Security-sensitive; manual review path                                                                                                       | none                         |
+| Workspace folder add/remove mid-session                                                  | Edge case; infra-heavy                                                                                                                       | none                         |
+| Heuristic-timer cancellation after **internal-terminal** agent close                     | VS Code terminal panel collapse races the canvas click on the X overlay; covered via the external-agent variant which dodges the layout race | external variant in suite    |
+| Producer/viewer relay scenarios (multi-viewer replay, producer reconnect reconciliation) | Producer endpoint not yet built                                                                                                              | `feat/producer-viewer-split` |
+
+## Running
+
+```bash
+cd pixel-agents
+npm run compile && npm run e2e               # full suite (~10 min)
+
+npm run e2e -- --grep "@area:spawn"          # filter by area tag
+npm run e2e -- --grep "@area:cross-cutting"
+npm run e2e -- --headed                      # watch chromium for standalone test
+
+npm run e2e:inventory                        # regenerate the inventory section below
+npm run test:report                          # build the Allure dashboard from latest run
+npm run test:report:open                     # serve + open the Allure dashboard in a browser
+```
+
+## What to read before adding a test
+
+- `pixel-agents/CLAUDE.md` — architecture and message protocol
+- `pixel-agents/e2e/fixtures/pixel-agents.ts` — fixture lifecycle
+- `pixel-agents/e2e/helpers/` — every helper, especially `hooks.ts`, `mock-claude.ts`, `office.ts`, `webview.ts`
+
+When you add a new test:
+
+- Pick a `test.describe` block that matches an existing `@area:` tag, OR add a new area to the "What this suite covers" section above and pick a tag.
+- Add `@area:<tag>` to the test title.
+- Add Allure `epic` / `feature` / `story` labels matching the area.
+- Run `npm run e2e:inventory` and commit the regenerated section.
+
+When you remove a test:
+
+- Run `npm run e2e:inventory` so the inventory drops it.
+- If the scenario it tested is now manual or deferred, add a row to "What's NOT covered".
+
+## Test inventory
+
+This section is auto-generated. Do not edit between the markers; CI fails on drift.
+
+<!-- BEGIN:E2E-INVENTORY -->
+
+48 tests total. Generated by `scripts/generate-e2e-inventory.mjs`. Re-run after adding or removing tests.
+
+### `@area:spawn` (3 tests)
+
+- `e2e/agent-spawn.spec.ts:21` — clicking + Agent spawns mock claude and creates a JSONL session file
+- `e2e/claude/hooks-on/basic.spec.ts:30` — internal terminal spawns agent and Task subagent appears then despawns (Hooks ON / spawn paths)
+- `e2e/claude/hooks-on/basic.spec.ts:82` — external Claude session adopted via hook confirmation lifecycle (Hooks ON / spawn paths)
+
+### `@area:lifecycle` (21 tests)
+
+- `e2e/claude/hooks-off/lifecycle.spec.ts:54` — /clear on internal agent reassigns the same character via JSONL polling (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:124` — --resume reassigns the same agent within grace via JSONL polling (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:166` — /clear edge case with a sibling agent in the same projectDir via JSONL polling (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:244` — heuristic late --resume after stale cleanup prevents zombie agents (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:301` — three parallel Task subagents in one turn render distinct sub-characters via polling (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:364` — inline teammate removed from team config disappears within one second via polling (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:418` — rapid /clear then new tool within 500ms lands on the reassigned agent via polling (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:473` — close via X prevents re-adoption of old JSONL during dismissal cooldown via polling (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:541` — external basic subagent with run_in_background but no teamName routes to basic path (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:81` — /clear on internal agent reassigns the same character to the new JSONL (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:138` — --resume reassigns the same agent within the grace window (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:203` — /clear edge case with a sibling agent in the same projectDir (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:287` — --resume after the grace window expires cleans up the old agent (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:357` — three parallel Task subagents in one turn render distinct sub-characters (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:428` — inline teammate removed from team config disappears within one second (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:490` — lead SessionEnd cascade-removes active inline teammates (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:573` — external basic subagent with run_in_background routes to basic path (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:638` — lead permission_prompt routes bubble to teammate not lead when teammates exist (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:718` — TeammateIdle marks the targeted teammate waiting and leaves lead unchanged (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:810` — rapid /clear then new tool within 500ms lands on the reassigned agent (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:868` — close via X prevents re-adoption of old JSONL during dismissal cooldown (Hooks ON / lifecycle)
+
+### `@area:cross-cutting` (13 tests)
+
+- `e2e/claude/hooks-off/lifecycle.spec.ts:594` — agentToolsClear fires at turn end via turn_duration JSONL record (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:656` — heuristic permission timer is cancelled when an agent is closed via overlay (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-off/lifecycle.spec.ts:726` — sub-agent permission bubble fires on stalled non-exempt sub-tool via heuristic timer (Hooks OFF / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:960` — done sound chime fires on agentStatus waiting (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1048` — restored agents skip the matrix spawn animation (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1130` — tool status text matches every PreToolUse tool name (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1205` — permission sound chime fires on agentToolPermission (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1319` — pixel-agents hook is installed in settings.json on extension startup (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1337` — hook install and uninstall round-trip via the Settings toggle (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1383` — permission bubble auto-clears when a fresh PreToolUse arrives (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1445` — settings toggles persist across a webview reload (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1483` — layout editor enter paint save persist and exit round-trip (Hooks ON / lifecycle)
+- `e2e/claude/hooks-on/lifecycle.spec.ts:1557` — hook uninstall preserves a pre-existing third-party hook entry (Hooks ON / lifecycle)
+
+### `@area:teams` (4 tests)
+
+- `e2e/claude/hooks-on/teams.spec.ts:45` — internal terminal lead with inline teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:92` — internal terminal lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:141` — external session lead with inline teammate routes tools to teammate (Hooks ON / teams)
+- `e2e/claude/hooks-on/teams.spec.ts:194` — external session lead with tmux teammate routes tools to teammate (Hooks ON / teams)
+
+### `@area:matrix` (6 tests)
+
+- `e2e/claude/hooks-off/matrix.spec.ts:60` — internal basic spawn adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:96` — internal inline teammate adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:147` — internal tmux teammate adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:198` — external basic spawn adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:235` — external inline teammate adopted via JSONL polling (Hooks OFF / matrix)
+- `e2e/claude/hooks-off/matrix.spec.ts:287` — external tmux teammate adopted via JSONL polling (Hooks OFF / matrix)
+
+### `@area:standalone` (1 tests)
+
+- `e2e/standalone/hooks.spec.ts:10` — propagates hook-driven lifecycle into the browser UI (Standalone / hooks)
+
+<!-- END:E2E-INVENTORY -->
+
+## Coverage philosophy
+
+We do not measure e2e via code coverage (too noisy, doesn't map to user-observable scenarios). Coverage is tracked by:
+
+1. **The inventory section above** — every test in the suite with its area tag and file:line.
+2. **The "What's NOT covered" gap list** — deliberately maintained; closing a gap removes the corresponding row.
+3. **Allure dashboard** — `epic` / `feature` / `story` labels group tests by area without needing this file. Run `npm run test:report` after a suite run, then open `allure-report/allure/index.html` → Behaviors view.

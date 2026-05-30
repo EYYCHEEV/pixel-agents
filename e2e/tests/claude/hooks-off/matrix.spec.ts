@@ -56,8 +56,8 @@ async function expectExternalAgentAdoption(frame: Frame): Promise<void> {
   await expectOverlayCount(frame, 1, 10_000);
 }
 
-test.describe('Hooks OFF / Matrix', () => {
-  test('A2 internal basic hooks off', async ({ pixelAgents }) => {
+test.describe('Hooks OFF / matrix', () => {
+  test('internal basic spawn adopted via JSONL polling @area:matrix', async ({ pixelAgents }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -69,7 +69,7 @@ test.describe('Hooks OFF / Matrix', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('A2 internal basic hooks off')
+      claudeScenario('internal basic spawn hooks off')
         .at(4_500)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-a2-task', 'Task', {
@@ -93,9 +93,11 @@ test.describe('Hooks OFF / Matrix', () => {
     await expectOverlayCount(panelFrame, 1);
   });
 
-  test('A4 internal inline teammate hooks off', async ({ pixelAgents }) => {
+  test('internal inline teammate adopted via JSONL polling @area:matrix', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
-    const teamName = uniqueTeamName('a4-inline');
+    const teamName = uniqueTeamName('hooks-off-internal-inline');
 
     await setSettings(frame, {
       watchAllSessions: false,
@@ -107,7 +109,7 @@ test.describe('Hooks OFF / Matrix', () => {
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      withTeammateSession(claudeScenario('A4 internal inline teammate hooks off'))
+      withTeammateSession(claudeScenario('internal inline teammate hooks off'))
         .at(500)
         .appendJsonl(buildTeamMetadataRecord(teamName))
         .at(2_000)
@@ -142,9 +144,9 @@ test.describe('Hooks OFF / Matrix', () => {
     await expectTeammateActivity(panelFrame, 'Searching the web');
   });
 
-  test('A6 internal tmux teammate hooks off', async ({ pixelAgents }) => {
+  test('internal tmux teammate adopted via JSONL polling @area:matrix', async ({ pixelAgents }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
-    const teamName = uniqueTeamName('a6-tmux');
+    const teamName = uniqueTeamName('hooks-off-internal-tmux');
 
     await setSettings(frame, {
       watchAllSessions: false,
@@ -156,7 +158,7 @@ test.describe('Hooks OFF / Matrix', () => {
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      withTeammateSession(claudeScenario('A6 internal tmux teammate hooks off'))
+      withTeammateSession(claudeScenario('internal tmux teammate hooks off'))
         .at(500)
         .appendJsonl(buildTeamMetadataRecord(teamName))
         .at(4_000)
@@ -193,9 +195,9 @@ test.describe('Hooks OFF / Matrix', () => {
     await expectLeadActivity(panelFrame, 'Running: npm test');
   });
 
-  test('A8 external basic hooks off', async ({ pixelAgents }) => {
+  test('external basic spawn adopted via JSONL polling @area:matrix', async ({ pixelAgents }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
-    const sessionId = 'a8-external-basic';
+    const sessionId = 'hooks-off-external-basic-session';
 
     await setSettings(frame, {
       watchAllSessions: true,
@@ -209,7 +211,7 @@ test.describe('Hooks OFF / Matrix', () => {
       workspaceDir,
       mockLogFile,
       sessionId,
-      scenario: claudeScenario('A8 external basic hooks off')
+      scenario: claudeScenario('external basic spawn hooks off')
         .at(6_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-a8-task', 'Task', {
@@ -230,10 +232,12 @@ test.describe('Hooks OFF / Matrix', () => {
     await expectOverlayCount(frame, 1, 12_000);
   });
 
-  test('A10 external inline teammate hooks off', async ({ pixelAgents }) => {
+  test('external inline teammate adopted via JSONL polling @area:matrix', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
-    const teamName = uniqueTeamName('a10-inline');
-    const sessionId = 'a10-external-inline';
+    const teamName = uniqueTeamName('hooks-off-external-inline');
+    const sessionId = 'hooks-off-external-inline-session';
 
     await setSettings(frame, {
       watchAllSessions: true,
@@ -248,7 +252,7 @@ test.describe('Hooks OFF / Matrix', () => {
       workspaceDir,
       mockLogFile,
       sessionId,
-      scenario: withTeammateSession(claudeScenario('A10 external inline teammate hooks off'))
+      scenario: withTeammateSession(claudeScenario('external inline teammate hooks off'))
         .at(5_000)
         .appendJsonl(buildTeamMetadataRecord(teamName))
         .at(6_500)
@@ -280,10 +284,10 @@ test.describe('Hooks OFF / Matrix', () => {
     await expectTeammateActivity(frame, 'Searching the web');
   });
 
-  test('A12 external tmux teammate hooks off', async ({ pixelAgents }) => {
+  test('external tmux teammate adopted via JSONL polling @area:matrix', async ({ pixelAgents }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
-    const teamName = uniqueTeamName('a12-tmux');
-    const sessionId = 'a12-external-tmux';
+    const teamName = uniqueTeamName('hooks-off-external-tmux');
+    const sessionId = 'hooks-off-external-tmux-session';
 
     await setSettings(frame, {
       watchAllSessions: true,
@@ -298,7 +302,7 @@ test.describe('Hooks OFF / Matrix', () => {
       workspaceDir,
       mockLogFile,
       sessionId,
-      scenario: withTeammateSession(claudeScenario('A12 external tmux teammate hooks off'))
+      scenario: withTeammateSession(claudeScenario('external tmux teammate hooks off'))
         .at(5_000)
         .appendJsonl(buildTeamMetadataRecord(teamName))
         .at(6_500)

@@ -3,6 +3,7 @@ import type { Frame, Page, TestInfo } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 
+import { applyAllureLabels } from '../helpers/allure-labels';
 import { launchVSCode, type VSCodeSession, waitForWorkbench } from '../helpers/launch';
 import { killTrackedExternalProcesses } from '../helpers/mock-claude';
 import { getPixelAgentsFrame, openPixelAgentsPanel } from '../helpers/webview';
@@ -48,7 +49,19 @@ function removeDirIfExists(dirPath: string | undefined): void {
   }
 }
 
-export const test = base.extend<{ pixelAgents: PixelAgentsContext }>({
+export const test = base.extend<{
+  pixelAgents: PixelAgentsContext;
+  _allureLabels: void;
+}>({
+  // Auto-fixture: tag every test with Allure epic + feature derived from its
+  // @area: annotation and enclosing describe path. Runs before pixelAgents.
+  _allureLabels: [
+    async ({}, use, testInfo) => {
+      await applyAllureLabels(testInfo);
+      await use();
+    },
+    { auto: true },
+  ],
   pixelAgents: async ({}, use, testInfo) => {
     const session = await launchVSCode(testInfo.title);
     const { window, tmpHome, workspaceDir, mockLogFile } = session;

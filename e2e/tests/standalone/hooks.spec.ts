@@ -6,8 +6,11 @@ import { sendHookEvent, sessionEndExit, sessionStartStartup } from '../../helper
 import type { RecordedServerMessage } from '../../helpers/standalone';
 import { setSettings } from '../../helpers/webview';
 
-test.describe('Standalone / Hooks', () => {
-  test('propagates hook-driven lifecycle into the browser UI', async ({ page, standalone }) => {
+test.describe('Standalone / hooks', () => {
+  test('propagates hook-driven lifecycle into the browser UI @area:standalone', async ({
+    page,
+    standalone,
+  }) => {
     await setSettings(page, {
       alwaysShowLabels: true,
       hooksEnabled: true,

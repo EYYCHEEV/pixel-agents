@@ -52,7 +52,7 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
 
   // Enable Claude Agent Teams in the test workspace. Real Claude Code reads this
   // env from .claude/settings.local.json on startup; without it, team mode is gated
-  // off and the team-related e2e tests (A3, A5, A4, A6, ...) can't exercise the
+  // off and the team-related e2e tests can't exercise the
   // feature. Mirrored in the VS Code process env and the macOS terminal profile env
   // below so it survives across all spawn paths.
   const claudeWorkspaceSettingsDir = path.join(workspaceDir, '.claude');

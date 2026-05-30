@@ -117,7 +117,7 @@ async function ensurePanelIsLarge(window: Page): Promise<void> {
  * Close the bottom panel. Triggers onDidChangeVisibility(false) on every
  * WebviewView hosted there; since PixelAgentsViewProvider does NOT set
  * retainContextWhenHidden, the webview is disposed and resolveWebviewView
- * is called fresh when the panel reopens. Used by the C9 test to exercise
+ * is called fresh when the panel reopens. Used by the restored-agents test to exercise
  * the existingAgents restore path without a destructive iframe reload.
  *
  * Toggle (rather than Close) is used because the literal command name varies
@@ -226,7 +226,7 @@ async function closeSettingsModal(settingsModal: Locator): Promise<void> {
 
 /**
  * Read the checked state of a Settings modal toggle without changing it.
- * Used by C13 (settings persistence) to assert state survives a panel reload.
+ * Used by the settings-persistence test to assert state survives a panel reload.
  */
 export async function getSettingChecked(frame: WebviewSurface, label: string): Promise<boolean> {
   const settingsModal = await openSettingsModal(frame);

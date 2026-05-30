@@ -26,8 +26,10 @@ import {
 } from '../../../helpers/team';
 import { getPixelAgentsFrame, openPixelAgentsPanel, setSettings } from '../../../helpers/webview';
 
-test.describe('Hooks ON / Basic', () => {
-  test('A1 internal basic spawn + Task subagent lifecycle', async ({ pixelAgents }) => {
+test.describe('Hooks ON / spawn paths', () => {
+  test('internal terminal spawns agent and Task subagent appears then despawns @area:spawn', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -37,7 +39,10 @@ test.describe('Hooks ON / Basic', () => {
       debugView: false,
     });
 
-    await arrangeNextClaudeInvocation(tmpHome, claudeScenario('A1 internal basic spawn').build());
+    await arrangeNextClaudeInvocation(
+      tmpHome,
+      claudeScenario('internal terminal basic spawn').build(),
+    );
     const spawned = await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
 
     expect(spawned.invocationLog).toContain(`session-id=${spawned.sessionId}`);
@@ -50,29 +55,33 @@ test.describe('Hooks ON / Basic', () => {
     const panelFrame = await getPixelAgentsFrame(window);
     await expectOverlayCount(panelFrame, 1);
 
-    // Matrix A1 expectation: "Task subagent appears on Task start, despawns on Task complete".
-    // Task subagent lifecycle is JSONL-driven even in hooks-on mode (transcriptParser
-    // routes Task/Agent tool events through JSONL regardless of hookDelivered).
-    const taskToolId = 'toolu-a1-task';
+    // Sub-character appears on Task tool_use and despawns on tool_result.
+    // Task subagent lifecycle is JSONL-driven even in hooks-on mode
+    // (transcriptParser routes Task/Agent tool events through JSONL
+    // regardless of hookDelivered).
+    const taskToolId = 'toolu-subagent-spawn';
     appendAssistantToolUse(spawned.jsonlFile, taskToolId, 'Task', {
-      description: 'A1 subtask',
+      description: 'spawned subtask',
     });
     await expectOverlayCount(panelFrame, 2);
-    await expectOverlayVisible(panelFrame, 'Subtask: A1 subtask');
+    await expectOverlayVisible(panelFrame, 'Subtask: spawned subtask');
 
     appendJsonlRecord(spawned.jsonlFile, buildUserToolResultRecord(taskToolId));
     await expectOverlayCount(panelFrame, 1);
   });
 
-  // A7: external hook session lifecycle.
+  // External hook-driven session adoption.
   //
   // Driven directly from the test via sendHookEvent (not from mock-claude's
   // scheduler) for deterministic timing. The original timer-driven version
-  // passed 5/5 in isolation but flaked reliably under full-suite load — the
-  // 200ms/2000ms/3200ms/4400ms/6000ms scheduled emissions slipped, and the test
-  // raced to see all 5 effects within fixed wall-clock windows. Other external
-  // tests (A9, A10, A11) use this same direct-emission pattern and don't flake.
-  test('A7 external hook session smoke', async ({ pixelAgents }) => {
+  // passed in isolation but flaked reliably under full-suite load: the
+  // 200ms/2000ms/3200ms/4400ms/6000ms scheduled emissions slipped, and the
+  // test raced to see all 5 effects within fixed wall-clock windows. The
+  // teammate-routing tests use this same direct-emission pattern and don't
+  // flake.
+  test('external Claude session adopted via hook confirmation lifecycle @area:spawn', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -84,7 +93,7 @@ test.describe('Hooks ON / Basic', () => {
 
     await waitForClaudeHookSetup(tmpHome);
     const serverConfig = await waitForHookServer(tmpHome);
-    const sessionId = 'a7-external-session';
+    const sessionId = 'external-hook-session';
 
     // Spawn mock-claude with only autoInit; the test drives every hook below.
     // holdOpenFor(3_000) keeps the process alive briefly so the JSONL it created
@@ -94,7 +103,7 @@ test.describe('Hooks ON / Basic', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      scenario: claudeScenario('A7 external hook session smoke').holdOpenFor(3_000).build(),
+      scenario: claudeScenario('external hook-driven session adoption').holdOpenFor(3_000).build(),
       sessionId,
     });
 

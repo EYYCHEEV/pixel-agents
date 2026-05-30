@@ -50,8 +50,10 @@ function otherOverlayId(ids: number[], knownId: number): number {
   return otherId;
 }
 
-test.describe('Hooks OFF / Lifecycle', () => {
-  test('B1 internal clear reassignment', async ({ pixelAgents }) => {
+test.describe('Hooks OFF / lifecycle', () => {
+  test('/clear on internal agent reassigns the same character via JSONL polling @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -63,7 +65,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B1 internal clear reassignment hooks off')
+      claudeScenario('/clear reassignment hooks off')
         .defineSession('replacement', '{{sessionId}}-clear')
         .at(3_500)
         .appendJsonl(mockClaudeInitRecord('mock-claude-clear-ready'), {
@@ -104,23 +106,24 @@ test.describe('Hooks OFF / Lifecycle', () => {
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
   });
 
-  // B3: heuristic /resume reassignment at agent startup.
+  // Heuristic --resume reassignment at agent startup.
   //
   // Scenario: user clicks + Agent → terminal runs `claude --session-id <UUID>`,
   // but the user actually types /resume (or claude --resume) so the session
   // generates a DIFFERENT id and writes to <other-id>.jsonl. The expected
   // <UUID>.jsonl never materializes. The heuristic in
   // adapters/vscode/agentManager.ts:177-211 polls for the expected file at 1Hz;
-  // when pollCount > 10 and the expected file still doesn't exist, it scans the
-  // project dir for any jsonl modified after agent creation and reassigns the
-  // agent to the newest candidate.
+  // when pollCount > 10 and the expected file still doesn't exist, it scans
+  // the project dir for any jsonl modified after agent creation and reassigns
+  // the agent to the newest candidate.
   //
-  // This test was previously deferred under the rationale that "heuristic
-  // resume detection was dropped in v1.1." That was incorrect — only the
-  // /clear last-prompt disambiguator was tightened (now requires the literal
-  // "/clear</command-name>" substring, see fileWatcher.ts:150-152); the
-  // /resume detection path in agentManager survived and remains active.
-  test('B3 internal resume reassignment within grace', async ({ pixelAgents }) => {
+  // Coexists with the /clear content-disambiguation heuristic in
+  // fileWatcher.ts:150-152 (which requires the literal "/clear</command-name>"
+  // substring in the new JSONL to claim it as a /clear file); --resume traffic
+  // doesn't carry that substring so the two heuristics route correctly.
+  test('--resume reassigns the same agent within grace via JSONL polling @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -132,7 +135,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B3 internal resume reassignment hooks off')
+      claudeScenario('--resume reassignment hooks off')
         .withoutAutoInit()
         .defineSession('replacement', '{{sessionId}}-resume')
         .at(11_000)
@@ -160,7 +163,9 @@ test.describe('Hooks OFF / Lifecycle', () => {
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
   });
 
-  test('B2 clear edge with another agent in the same projectDir', async ({ pixelAgents }) => {
+  test('/clear edge case with a sibling agent in the same projectDir via JSONL polling @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -172,7 +177,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B2 sibling internal agent hooks off')
+      claudeScenario('/clear edge sibling agent hooks off')
         .at(2_500)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-b2-sibling', 'Bash', {
@@ -190,10 +195,10 @@ test.describe('Hooks OFF / Lifecycle', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B2 internal clear with sibling present hooks off')
+      claudeScenario('/clear reassign with sibling present hooks off')
         .defineSession('replacement', '{{sessionId}}-clear')
         .at(3_500)
-        .appendJsonl(mockClaudeInitRecord('mock-claude-b2-clear-ready'), {
+        .appendJsonl(mockClaudeInitRecord('mock-claude-sibling-clear-ready'), {
           session: 'replacement',
         })
         .at(3_550)
@@ -236,7 +241,9 @@ test.describe('Hooks OFF / Lifecycle', () => {
     ]);
   });
 
-  test('B4 heuristic late resume after stale cleanup prevents zombies', async ({ pixelAgents }) => {
+  test('heuristic late --resume after stale cleanup prevents zombie agents @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -250,8 +257,8 @@ test.describe('Hooks OFF / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b4-hooks-off-old',
-      scenario: claudeScenario('B4 late resume after stale cleanup hooks off old')
+      sessionId: 'late-resume-old-session',
+      scenario: claudeScenario('late resume after stale cleanup hooks off old')
         .at(5_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-b4-before', 'Bash', {
@@ -273,8 +280,8 @@ test.describe('Hooks OFF / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b4-hooks-off-resumed',
-      scenario: claudeScenario('B4 late resume after stale cleanup hooks off new')
+      sessionId: 'late-resume-new-session',
+      scenario: claudeScenario('late resume after stale cleanup hooks off new')
         .at(5_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-b4-late', 'Bash', {
@@ -291,7 +298,9 @@ test.describe('Hooks OFF / Lifecycle', () => {
     expect(newAgentId).not.toBe(oldAgentId);
   });
 
-  test('B5 three parallel Task subagents in one turn', async ({ pixelAgents }) => {
+  test('three parallel Task subagents in one turn render distinct sub-characters via polling @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -303,7 +312,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B5 three parallel Task subagents in one turn hooks off')
+      claudeScenario('three parallel Task subagents in one turn hooks off')
         .at(2_500)
         .appendJsonl(
           buildAssistantToolUseBatchRecord([
@@ -352,9 +361,11 @@ test.describe('Hooks OFF / Lifecycle', () => {
     await expectOverlayCount(panelFrame, 1, 16_000);
   });
 
-  test('B6 inline teammate removed from config', async ({ pixelAgents }) => {
+  test('inline teammate removed from team config disappears within one second via polling @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
-    const teamName = uniqueTeamName('b6-inline-hooks-off');
+    const teamName = uniqueTeamName('teammate-removal-hooks-off');
     const configPath = seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
 
     await setSettings(frame, {
@@ -366,7 +377,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      withInlineTeammateSession(claudeScenario('B6 inline teammate removed from config hooks off'))
+      withInlineTeammateSession(claudeScenario('inline teammate removed from config hooks off'))
         .at(500)
         .appendJsonl(buildTeamMetadataRecord(teamName))
         .at(1_500)
@@ -404,7 +415,9 @@ test.describe('Hooks OFF / Lifecycle', () => {
     await expectNoOverlayWithTexts(panelFrame, [INLINE_TEAMMATE_ROLE], 2_000);
   });
 
-  test('B11 rapid clear then new tool in under 500 ms', async ({ pixelAgents }) => {
+  test('rapid /clear then new tool within 500ms lands on the reassigned agent via polling @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -416,7 +429,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B11 rapid clear then new tool in under 500 ms hooks off')
+      claudeScenario('rapid clear then new tool under 500ms hooks off')
         .defineSession('replacement', '{{sessionId}}-clear-fast')
         .at(3_000)
         .appendJsonl(mockClaudeInitRecord('mock-claude-clear-fast-ready'), {
@@ -457,7 +470,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
   });
 
-  test('B12 close via X prevents old JSONL re-adoption during cooldown', async ({
+  test('close via X prevents re-adoption of old JSONL during dismissal cooldown via polling @area:lifecycle', async ({
     pixelAgents,
   }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
@@ -473,8 +486,8 @@ test.describe('Hooks OFF / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b12-hooks-off-old',
-      scenario: claudeScenario('B12 dismissal cooldown hooks off old session')
+      sessionId: 'dismissal-cooldown-old-session',
+      scenario: claudeScenario('dismissal cooldown hooks off old session')
         .at(5_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-b12-old-live', 'Bash', {
@@ -500,8 +513,8 @@ test.describe('Hooks OFF / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b12-hooks-off-new',
-      scenario: claudeScenario('B12 dismissal cooldown hooks off new session')
+      sessionId: 'dismissal-cooldown-new-session',
+      scenario: claudeScenario('dismissal cooldown hooks off new session')
         .at(5_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-b12-new-live', 'Bash', {
@@ -525,7 +538,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
     await expectOverlayCount(frame, 1);
   });
 
-  test('B8 external basic subagent with run_in_background true but no teamName', async ({
+  test('external basic subagent with run_in_background but no teamName routes to basic path @area:lifecycle', async ({
     pixelAgents,
   }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
@@ -537,17 +550,18 @@ test.describe('Hooks OFF / Lifecycle', () => {
       debugView: false,
     });
 
-    // Heuristic mode mirror of hooks-on/lifecycle B8: external session with an
-    // Agent tool_use that carries run_in_background=true but the lead has NO
-    // teamName. The regression case is misrouting this to the teammate path,
-    // which would produce an extra "general-purpose" teammate overlay alongside
-    // the basic Subtask sub-character.
+    // Heuristic-mode mirror of the hooks-on external-background-subagent
+    // case: external session with an Agent tool_use that carries
+    // run_in_background=true but the lead has NO teamName. The regression
+    // case is misrouting this to the teammate path, which would produce an
+    // extra "general-purpose" teammate overlay alongside the basic Subtask
+    // sub-character.
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b8-hooks-off-basic',
-      scenario: claudeScenario('B8 external basic subagent no teamName hooks off')
+      sessionId: 'external-basic-background-subagent',
+      scenario: claudeScenario('external basic subagent no teamName hooks off')
         .at(1_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-b8-off-agent', 'Agent', {
@@ -577,7 +591,9 @@ test.describe('Hooks OFF / Lifecycle', () => {
     await expectNoOverlay(frame, 'general-purpose', 2_000);
   });
 
-  test('C4 agentToolsClear at turn end', async ({ pixelAgents }) => {
+  test('agentToolsClear fires at turn end via turn_duration JSONL record @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -593,7 +609,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
     // here would leave a ghost "Running: ..." overlay even after the turn ended.
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('C4 turn-end clear')
+      claudeScenario('turn-end agentToolsClear')
         .at(1_000)
         .appendJsonl(buildAssistantToolUseRecord('toolu-c4-bash', 'Bash', { command: 'npm test' }))
         .at(3_000)
@@ -616,25 +632,30 @@ test.describe('Hooks OFF / Lifecycle', () => {
     await expectNoOverlay(panelFrame, 'Running: npm test', 2_000);
   });
 
-  // C7: verify timers are cancelled when an agent is closed via the overlay X.
+  // Heuristic permission and text-idle timers are cancelled when an agent
+  // is closed via the overlay X.
   //
-  // Invariant: closing an agent must cancel its in-flight 7s permission and 5s
-  // text-idle heuristic timers. If a timer fires after close and the extension
-  // unconditionally broadcasts `agentToolPermission` (or `agentStatus: waiting`)
-  // for the gone agent, the webview's handler runs playPermissionSound() /
-  // playDoneSound() (see webview-ui/src/hooks/useExtensionMessages.ts:354 and 341),
-  // which our notificationSound.ts instrumentation records in
+  // Invariant: closing an agent must cancel its in-flight 7s permission and
+  // 5s text-idle heuristic timers. If a timer fires after close and the
+  // extension unconditionally broadcasts `agentToolPermission` (or
+  // `agentStatus: waiting`) for the gone agent, the webview's handler runs
+  // playPermissionSound() / playDoneSound() (see
+  // webview-ui/src/hooks/useExtensionMessages.ts:354 and 341), which our
+  // notificationSound.ts instrumentation records in
   // window.__pixelAgentsSoundsPlayed.
   //
-  // Uses EXTERNAL agent (no VS Code terminal) so the Pixel Agents panel stays at
-  // full size, dodging the layout race that breaks closeAgentFromOverlay after
-  // an internal spawn. Mirrors the working B12 close-via-overlay pattern.
+  // Uses EXTERNAL agent (no VS Code terminal) so the Pixel Agents panel
+  // stays at full size, dodging the layout race that breaks
+  // closeAgentFromOverlay after an internal spawn (same close-via-overlay
+  // pattern used by the dismissal-cooldown lifecycle test in this file).
   //
   // This catches "hard" leaks (broadcast despite missing agent). "Soft" leaks
   // (timer fires but its callback no-ops because internal state is gone) are
   // invisible from the webview — they require extension-host instrumentation
   // and are out of scope here.
-  test('C7 timers cancelled when agent closed via overlay (hooks off)', async ({ pixelAgents }) => {
+  test('heuristic permission timer is cancelled when an agent is closed via overlay @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -648,8 +669,8 @@ test.describe('Hooks OFF / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'c7-timer-leak',
-      scenario: claudeScenario('C7 timer leak after close hooks off')
+      sessionId: 'heuristic-timer-cancellation',
+      scenario: claudeScenario('heuristic timer cancellation on close hooks off')
         .at(2_500)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-c7', 'Bash', {
@@ -690,7 +711,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
     expect(playedKinds).not.toContain('done');
   });
 
-  // C14: sub-agent permission bubble fires when a sub-agent runs a non-exempt
+  // Sub-agent permission bubble fires when a sub-agent runs a non-exempt
   // tool with no follow-up data for ~5s. The heuristic permission timer is
   // active for sub-agents in hooks-OFF mode (same path as parent agents).
   //
@@ -702,7 +723,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
   // 3. ~5s with no further sub-agent data -> permission bubble appears on
   //    both parent and sub-character (per CLAUDE.md "Sub-agent permission
   //    detection" note).
-  test('C14 sub-agent permission bubble fires on stalled non-exempt sub-tool', async ({
+  test('sub-agent permission bubble fires on stalled non-exempt sub-tool via heuristic timer @area:cross-cutting', async ({
     pixelAgents,
   }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
@@ -719,11 +740,11 @@ test.describe('Hooks OFF / Lifecycle', () => {
 
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('C14 sub-agent permission bubble hooks off')
+      claudeScenario('sub-agent permission bubble hooks off')
         .at(2_000)
         .appendJsonl(
           buildAssistantToolUseRecord(parentToolId, 'Task', {
-            description: 'C14 subtask',
+            description: 'permission subtask',
           }),
         )
         .at(3_000)
@@ -760,7 +781,7 @@ test.describe('Hooks OFF / Lifecycle', () => {
 
     // Sub-character appears once the Task tool_use is parsed.
     await expectOverlayCount(panelFrame, 2, 12_000);
-    await expectOverlayVisible(panelFrame, 'Subtask: C14 subtask');
+    await expectOverlayVisible(panelFrame, 'Subtask: permission subtask');
 
     // Within ~7s (5s heuristic timer + cushion) the permission bubble must
     // appear. The bubble manifests as the "Needs approval" overlay text on

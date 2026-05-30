@@ -72,6 +72,7 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
+    "build:extension": "node esbuild.js --production",
     "build:webview": "cd webview-ui && npm run build",
     "compile": "npm run asyncapi:generate && npm run check-types && npm run lint && node esbuild.js && npm run build:webview",
     "build": "npm run compile",
@@ -94,8 +95,10 @@
     "test": "npm run test:webview && npm run test:server",
     "e2e": "node scripts/run-e2e.mjs",
     "e2e:debug": "node scripts/run-e2e.mjs --debug",
+    "e2e:inventory": "node scripts/generate-e2e-inventory.mjs",
     "build:webview:preview": "node scripts/build-webview-preview.mjs",
     "test:report": "node scripts/build-allure-report.mjs",
+    "test:report:open": "allure open allure-report/allure",
     "e2e:report": "npm run test:report",
     "vercel:prepare": "npm run build:webview:preview && npm run test:report && node scripts/assemble-vercel-output.mjs",
     "knip": "knip"

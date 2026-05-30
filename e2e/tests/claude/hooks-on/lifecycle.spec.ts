@@ -77,8 +77,10 @@ function otherOverlayId(ids: number[], knownId: number): number {
   return otherId;
 }
 
-test.describe('Hooks ON / Lifecycle', () => {
-  test('B1 internal clear reassignment', async ({ pixelAgents }) => {
+test.describe('Hooks ON / lifecycle', () => {
+  test('/clear on internal agent reassigns the same character to the new JSONL @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -91,7 +93,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B1 internal clear reassignment')
+      claudeScenario('/clear reassignment hooks on')
         .defineSession('replacement', '{{sessionId}}-clear')
         .at(3_500)
         .emitHook(sessionEndClear('{{sessionId}}') as Record<string, unknown>)
@@ -133,7 +135,9 @@ test.describe('Hooks ON / Lifecycle', () => {
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
   });
 
-  test('B3 internal resume reassignment within grace', async ({ pixelAgents }) => {
+  test('--resume reassigns the same agent within the grace window @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -146,7 +150,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B3 internal resume reassignment')
+      claudeScenario('--resume reassignment hooks on')
         .defineSession('replacement', '{{sessionId}}-resume')
         .at(3_500)
         .emitHook(sessionEndResume('{{sessionId}}') as Record<string, unknown>)
@@ -196,7 +200,9 @@ test.describe('Hooks ON / Lifecycle', () => {
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
   });
 
-  test('B2 clear edge with another agent in the same projectDir', async ({ pixelAgents }) => {
+  test('/clear edge case with a sibling agent in the same projectDir @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -209,12 +215,12 @@ test.describe('Hooks ON / Lifecycle', () => {
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B2 clear edge with sibling agent hooks on')
+      claudeScenario('/clear edge with sibling agent hooks on')
         .defineSession('replacement', '{{sessionId}}-clear')
         .at(7_000)
         .emitHook(sessionEndClear('{{sessionId}}') as Record<string, unknown>)
         .at(7_100)
-        .appendJsonl(mockClaudeInitRecord('mock-claude-b2-clear-ready'), {
+        .appendJsonl(mockClaudeInitRecord('mock-claude-sibling-clear-ready'), {
           session: 'replacement',
         })
         .at(7_300)
@@ -247,18 +253,18 @@ test.describe('Hooks ON / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b2-sibling-hooks-on',
-      scenario: claudeScenario('B2 sibling external hooks on')
+      sessionId: 'sibling-clear-edge',
+      scenario: claudeScenario('sibling external session hooks on')
         .at(200)
         .emitHook(
-          sessionStartStartup('b2-sibling-hooks-on', '{{cwd}}', '{{transcriptPath}}') as Record<
+          sessionStartStartup('sibling-clear-edge', '{{cwd}}', '{{transcriptPath}}') as Record<
             string,
             unknown
           >,
         )
         .at(1_000)
         .emitHook(
-          preToolUseBash('b2-sibling-hooks-on', 'npm run sibling') as Record<string, unknown>,
+          preToolUseBash('sibling-clear-edge', 'npm run sibling') as Record<string, unknown>,
         )
         .holdOpenFor(12_000)
         .build(),
@@ -278,7 +284,9 @@ test.describe('Hooks ON / Lifecycle', () => {
     expect(await readAgentOverlayIds(panelFrame)).toEqual([internalAgentId, externalAgentId]);
   });
 
-  test('B4 resume after grace expires cleans up the old agent', async ({ pixelAgents }) => {
+  test('--resume after the grace window expires cleans up the old agent @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -293,24 +301,28 @@ test.describe('Hooks ON / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b4-hooks-on-old',
-      scenario: claudeScenario('B4 resume after grace expires hooks on')
-        .defineSession('replacement', 'b4-hooks-on-resumed')
+      sessionId: 'late-resume-old-session-hooks-on',
+      scenario: claudeScenario('--resume after grace expires hooks on')
+        .defineSession('replacement', 'late-resume-new-session-hooks-on')
         .at(200)
         .emitHook(
-          sessionStartStartup('b4-hooks-on-old', '{{cwd}}', '{{transcriptPath}}') as Record<
+          sessionStartStartup(
+            'late-resume-old-session-hooks-on',
+            '{{cwd}}',
+            '{{transcriptPath}}',
+          ) as Record<string, unknown>,
+        )
+        .at(900)
+        .emitHook(
+          preToolUseBash('late-resume-old-session-hooks-on', 'npm run before-resume') as Record<
             string,
             unknown
           >,
         )
-        .at(900)
-        .emitHook(
-          preToolUseBash('b4-hooks-on-old', 'npm run before-resume') as Record<string, unknown>,
-        )
         .at(2_200)
-        .emitHook(sessionEndResume('b4-hooks-on-old') as Record<string, unknown>)
+        .emitHook(sessionEndResume('late-resume-old-session-hooks-on') as Record<string, unknown>)
         .at(4_800)
-        .appendJsonl(mockClaudeInitRecord('mock-claude-b4-late-resume'), {
+        .appendJsonl(mockClaudeInitRecord('mock-claude-late-resume-ready'), {
           session: 'replacement',
         })
         .at(5_000)
@@ -342,7 +354,9 @@ test.describe('Hooks ON / Lifecycle', () => {
     expect(newAgentId).not.toBe(oldAgentId);
   });
 
-  test('B5 three parallel Task subagents in one turn', async ({ pixelAgents }) => {
+  test('three parallel Task subagents in one turn render distinct sub-characters @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -355,7 +369,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B5 three parallel Task subagents in one turn hooks on')
+      claudeScenario('three parallel Task subagents in one turn hooks on')
         .at(300)
         .emitHook(
           sessionStartStartup('{{sessionId}}', '{{cwd}}', '{{transcriptPath}}') as Record<
@@ -411,9 +425,11 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectOverlayCount(panelFrame, 1, 16_000);
   });
 
-  test('B6 inline teammate removed from config', async ({ pixelAgents }) => {
+  test('inline teammate removed from team config disappears within one second @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
-    const teamName = uniqueTeamName('b6-inline-hooks-on');
+    const teamName = uniqueTeamName('teammate-removal-hooks-on');
     const configPath = seedTeamConfig(tmpHome, teamName, ['lead', INLINE_TEAMMATE_ROLE]);
 
     await setSettings(frame, {
@@ -426,7 +442,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      withInlineTeammateSession(claudeScenario('B6 inline teammate removed from config hooks on'))
+      withInlineTeammateSession(claudeScenario('inline teammate removed from config hooks on'))
         .at(300)
         .emitHook(
           sessionStartStartup('{{sessionId}}', '{{cwd}}', '{{transcriptPath}}') as Record<
@@ -471,11 +487,11 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectNoOverlayWithTexts(panelFrame, [INLINE_TEAMMATE_ROLE], 2_000);
   });
 
-  test('B7 lead SessionEnd cascades removal to active inline teammates', async ({
+  test('lead SessionEnd cascade-removes active inline teammates @area:lifecycle', async ({
     pixelAgents,
   }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
-    const teamName = uniqueTeamName('b7-inline-hooks-on');
+    const teamName = uniqueTeamName('lead-cascade-hooks-on');
 
     await setSettings(frame, {
       watchAllSessions: true,
@@ -490,21 +506,25 @@ test.describe('Hooks ON / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b7-hooks-on-lead',
-      scenario: withInlineTeammateSessions(claudeScenario('B7 lead SessionEnd cascade hooks on'), [
+      sessionId: 'lead-cascade-session-hooks-on',
+      scenario: withInlineTeammateSessions(claudeScenario('lead SessionEnd cascade hooks on'), [
         { alias: INLINE_TEAMMATE_ALIAS, role: INLINE_TEAMMATE_ROLE },
         { alias: SECOND_TEAMMATE_ALIAS, role: SECOND_TEAMMATE_ROLE },
       ])
         .at(200)
         .emitHook(
-          sessionStartStartup('b7-hooks-on-lead', '{{cwd}}', '{{transcriptPath}}') as Record<
-            string,
-            unknown
-          >,
+          sessionStartStartup(
+            'lead-cascade-session-hooks-on',
+            '{{cwd}}',
+            '{{transcriptPath}}',
+          ) as Record<string, unknown>,
         )
         .at(900)
         .emitHook(
-          preToolUseAgent('b7-hooks-on-lead', 'Delegate teammates') as Record<string, unknown>,
+          preToolUseAgent('lead-cascade-session-hooks-on', 'Delegate teammates') as Record<
+            string,
+            unknown
+          >,
         )
         .at(1_100)
         .appendJsonl(buildTeamMetadataRecord(teamName))
@@ -518,7 +538,10 @@ test.describe('Hooks ON / Lifecycle', () => {
         })
         .at(1_500)
         .emitHook(
-          subagentStart('b7-hooks-on-lead', INLINE_TEAMMATE_ROLE) as Record<string, unknown>,
+          subagentStart('lead-cascade-session-hooks-on', INLINE_TEAMMATE_ROLE) as Record<
+            string,
+            unknown
+          >,
         )
         .at(2_200)
         .appendJsonl(
@@ -535,7 +558,7 @@ test.describe('Hooks ON / Lifecycle', () => {
           { session: SECOND_TEAMMATE_ALIAS },
         )
         .at(5_000)
-        .emitHook(sessionEndExit('b7-hooks-on-lead') as Record<string, unknown>)
+        .emitHook(sessionEndExit('lead-cascade-session-hooks-on') as Record<string, unknown>)
         .holdOpenFor(8_000)
         .build(),
     });
@@ -547,7 +570,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectOverlayCount(frame, 0, 8_000);
   });
 
-  test('B8 external basic subagent with run_in_background true but no teamName', async ({
+  test('external basic subagent with run_in_background routes to basic path @area:lifecycle', async ({
     pixelAgents,
   }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
@@ -564,21 +587,22 @@ test.describe('Hooks ON / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b8-hooks-on-basic',
-      scenario: claudeScenario('B8 external basic subagent no teamName hooks on')
+      sessionId: 'external-background-subagent-hooks-on',
+      scenario: claudeScenario('external basic background subagent hooks on')
         .at(200)
         .emitHook(
-          sessionStartStartup('b8-hooks-on-basic', '{{cwd}}', '{{transcriptPath}}') as Record<
-            string,
-            unknown
-          >,
+          sessionStartStartup(
+            'external-background-subagent-hooks-on',
+            '{{cwd}}',
+            '{{transcriptPath}}',
+          ) as Record<string, unknown>,
         )
         .at(900)
         .emitHook(
-          preToolUseAgent('b8-hooks-on-basic', 'Background basic subtask') as Record<
-            string,
-            unknown
-          >,
+          preToolUseAgent(
+            'external-background-subagent-hooks-on',
+            'Background basic subtask',
+          ) as Record<string, unknown>,
         )
         .at(1_100)
         .appendJsonl(
@@ -588,7 +612,12 @@ test.describe('Hooks ON / Lifecycle', () => {
           }),
         )
         .at(1_500)
-        .emitHook(subagentStart('b8-hooks-on-basic', 'general-purpose') as Record<string, unknown>)
+        .emitHook(
+          subagentStart('external-background-subagent-hooks-on', 'general-purpose') as Record<
+            string,
+            unknown
+          >,
+        )
         .at(4_500)
         .appendJsonl(buildUserToolResultRecord('toolu-b8-agent'))
         .at(4_900)
@@ -606,9 +635,11 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectOverlayCount(frame, 1);
   });
 
-  test('B9 permission prompt routes to teammate, not lead', async ({ pixelAgents }) => {
+  test('lead permission_prompt routes bubble to teammate not lead when teammates exist @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
-    const teamName = uniqueTeamName('b9-inline-hooks-on');
+    const teamName = uniqueTeamName('teammate-permission-hooks-on');
 
     await setSettings(frame, {
       watchAllSessions: true,
@@ -623,18 +654,22 @@ test.describe('Hooks ON / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b9-hooks-on-lead',
-      scenario: withInlineTeammateSession(claudeScenario('B9 teammate permission routing hooks on'))
+      sessionId: 'teammate-permission-session-hooks-on',
+      scenario: withInlineTeammateSession(claudeScenario('teammate permission routing hooks on'))
         .at(200)
         .emitHook(
-          sessionStartStartup('b9-hooks-on-lead', '{{cwd}}', '{{transcriptPath}}') as Record<
-            string,
-            unknown
-          >,
+          sessionStartStartup(
+            'teammate-permission-session-hooks-on',
+            '{{cwd}}',
+            '{{transcriptPath}}',
+          ) as Record<string, unknown>,
         )
         .at(900)
         .emitHook(
-          preToolUseAgent('b9-hooks-on-lead', 'Delegate teammate work') as Record<string, unknown>,
+          preToolUseAgent(
+            'teammate-permission-session-hooks-on',
+            'Delegate teammate work',
+          ) as Record<string, unknown>,
         )
         .at(1_100)
         .appendJsonl(buildTeamMetadataRecord(teamName))
@@ -644,7 +679,10 @@ test.describe('Hooks ON / Lifecycle', () => {
         })
         .at(1_500)
         .emitHook(
-          subagentStart('b9-hooks-on-lead', INLINE_TEAMMATE_ROLE) as Record<string, unknown>,
+          subagentStart('teammate-permission-session-hooks-on', INLINE_TEAMMATE_ROLE) as Record<
+            string,
+            unknown
+          >,
         )
         .at(2_200)
         .appendJsonl(
@@ -654,10 +692,18 @@ test.describe('Hooks ON / Lifecycle', () => {
           { session: INLINE_TEAMMATE_ALIAS },
         )
         .at(3_500)
-        .emitHook(notificationPermissionPrompt('b9-hooks-on-lead') as Record<string, unknown>)
+        .emitHook(
+          notificationPermissionPrompt('teammate-permission-session-hooks-on') as Record<
+            string,
+            unknown
+          >,
+        )
         .at(5_200)
         .emitHook(
-          taskCompleted('b9-hooks-on-lead', INLINE_TEAMMATE_ROLE) as Record<string, unknown>,
+          taskCompleted('teammate-permission-session-hooks-on', INLINE_TEAMMATE_ROLE) as Record<
+            string,
+            unknown
+          >,
         )
         .holdOpenFor(8_000)
         .build(),
@@ -669,9 +715,11 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectNoOverlayWithTexts(frame, [INLINE_TEAMMATE_ROLE, 'Needs approval'], 8_000);
   });
 
-  test('B10 TeammateIdle targets the specific teammate only', async ({ pixelAgents }) => {
+  test('TeammateIdle marks the targeted teammate waiting and leaves lead unchanged @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
-    const teamName = uniqueTeamName('b10-inline-hooks-on');
+    const teamName = uniqueTeamName('targeted-teammate-idle-hooks-on');
 
     await setSettings(frame, {
       watchAllSessions: true,
@@ -686,21 +734,25 @@ test.describe('Hooks ON / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b10-hooks-on-lead',
-      scenario: withInlineTeammateSessions(claudeScenario('B10 targeted teammate idle hooks on'), [
+      sessionId: 'targeted-teammate-idle-session-hooks-on',
+      scenario: withInlineTeammateSessions(claudeScenario('targeted teammate idle hooks on'), [
         { alias: INLINE_TEAMMATE_ALIAS, role: INLINE_TEAMMATE_ROLE },
         { alias: SECOND_TEAMMATE_ALIAS, role: SECOND_TEAMMATE_ROLE },
       ])
         .at(200)
         .emitHook(
-          sessionStartStartup('b10-hooks-on-lead', '{{cwd}}', '{{transcriptPath}}') as Record<
-            string,
-            unknown
-          >,
+          sessionStartStartup(
+            'targeted-teammate-idle-session-hooks-on',
+            '{{cwd}}',
+            '{{transcriptPath}}',
+          ) as Record<string, unknown>,
         )
         .at(900)
         .emitHook(
-          preToolUseAgent('b10-hooks-on-lead', 'Delegate teammates') as Record<string, unknown>,
+          preToolUseAgent(
+            'targeted-teammate-idle-session-hooks-on',
+            'Delegate teammates',
+          ) as Record<string, unknown>,
         )
         .at(1_100)
         .appendJsonl(buildTeamMetadataRecord(teamName))
@@ -714,7 +766,10 @@ test.describe('Hooks ON / Lifecycle', () => {
         })
         .at(1_500)
         .emitHook(
-          subagentStart('b10-hooks-on-lead', INLINE_TEAMMATE_ROLE) as Record<string, unknown>,
+          subagentStart('targeted-teammate-idle-session-hooks-on', INLINE_TEAMMATE_ROLE) as Record<
+            string,
+            unknown
+          >,
         )
         .at(2_200)
         .appendJsonl(
@@ -732,7 +787,10 @@ test.describe('Hooks ON / Lifecycle', () => {
         )
         .at(4_000)
         .emitHook(
-          teammateIdle('b10-hooks-on-lead', INLINE_TEAMMATE_ROLE) as Record<string, unknown>,
+          teammateIdle('targeted-teammate-idle-session-hooks-on', INLINE_TEAMMATE_ROLE) as Record<
+            string,
+            unknown
+          >,
         )
         .holdOpenFor(8_000)
         .build(),
@@ -749,7 +807,9 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectNoOverlayWithTexts(frame, ['LEAD', 'Might be waiting for input']);
   });
 
-  test('B11 rapid clear then new tool in under 500 ms', async ({ pixelAgents }) => {
+  test('rapid /clear then new tool within 500ms lands on the reassigned agent @area:lifecycle', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -762,7 +822,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('B11 rapid clear then new tool in under 500 ms hooks on')
+      claudeScenario('rapid clear then new tool under 500ms hooks on')
         .defineSession('replacement', '{{sessionId}}-clear-fast')
         .at(3_500)
         .emitHook(sessionEndClear('{{sessionId}}') as Record<string, unknown>)
@@ -805,7 +865,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     expect(await readAgentOverlayIds(panelFrame)).toEqual([originalAgentId]);
   });
 
-  test('B12 close via X prevents old JSONL re-adoption during cooldown', async ({
+  test('close via X prevents re-adoption of old JSONL during dismissal cooldown @area:lifecycle', async ({
     pixelAgents,
   }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
@@ -822,17 +882,23 @@ test.describe('Hooks ON / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b12-hooks-on-old',
-      scenario: claudeScenario('B12 dismissal cooldown hooks on old session')
+      sessionId: 'dismissal-cooldown-old-session-hooks-on',
+      scenario: claudeScenario(' dismissal cooldown hooks on old session')
         .at(200)
         .emitHook(
-          sessionStartStartup('b12-hooks-on-old', '{{cwd}}', '{{transcriptPath}}') as Record<
+          sessionStartStartup(
+            'dismissal-cooldown-old-session-hooks-on',
+            '{{cwd}}',
+            '{{transcriptPath}}',
+          ) as Record<string, unknown>,
+        )
+        .at(900)
+        .emitHook(
+          preToolUseBash('dismissal-cooldown-old-session-hooks-on', 'npm run old-live') as Record<
             string,
             unknown
           >,
         )
-        .at(900)
-        .emitHook(preToolUseBash('b12-hooks-on-old', 'npm run old-live') as Record<string, unknown>)
         .at(7_000)
         .appendJsonl(
           buildAssistantToolUseRecord('toolu-b12-old-stale', 'Bash', {
@@ -852,17 +918,23 @@ test.describe('Hooks ON / Lifecycle', () => {
       tmpHome,
       workspaceDir,
       mockLogFile,
-      sessionId: 'b12-hooks-on-new',
-      scenario: claudeScenario('B12 dismissal cooldown hooks on new session')
+      sessionId: 'dismissal-cooldown-new-session-hooks-on',
+      scenario: claudeScenario(' dismissal cooldown hooks on new session')
         .at(200)
         .emitHook(
-          sessionStartStartup('b12-hooks-on-new', '{{cwd}}', '{{transcriptPath}}') as Record<
+          sessionStartStartup(
+            'dismissal-cooldown-new-session-hooks-on',
+            '{{cwd}}',
+            '{{transcriptPath}}',
+          ) as Record<string, unknown>,
+        )
+        .at(900)
+        .emitHook(
+          preToolUseBash('dismissal-cooldown-new-session-hooks-on', 'npm run reopened') as Record<
             string,
             unknown
           >,
         )
-        .at(900)
-        .emitHook(preToolUseBash('b12-hooks-on-new', 'npm run reopened') as Record<string, unknown>)
         .holdOpenFor(8_000)
         .build(),
     });
@@ -879,13 +951,15 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectOverlayCount(frame, 1);
   });
 
-  // C8: verify playDoneSound() fires on agentStatus: 'waiting'.
+  // verify playDoneSound() fires on agentStatus: 'waiting'.
   // The webview's notificationSound.ts records every invocation into
   // window.__pixelAgentsSoundsPlayed (a test-only marker that runs BEFORE the
   // soundEnabled gate). We trigger waiting state by sending an idle_prompt
-  // notification hook (the same path A7 uses to surface "Might be waiting for
+  // notification hook (the same hook path the spawn-paths test uses to surface "Might be waiting for
   // input") and assert the sound was dispatched.
-  test('C8 sound chime fires on agentStatus waiting', async ({ pixelAgents }) => {
+  test('done sound chime fires on agentStatus waiting @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -897,13 +971,13 @@ test.describe('Hooks ON / Lifecycle', () => {
 
     await waitForClaudeHookSetup(tmpHome);
     const serverConfig = await waitForHookServer(tmpHome);
-    const sessionId = 'c8-sound-chime-session';
+    const sessionId = 'done-chime-session';
 
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
       mockLogFile,
-      scenario: claudeScenario('C8 sound chime smoke').holdOpenFor(3_000).build(),
+      scenario: claudeScenario('done sound chime smoke').holdOpenFor(3_000).build(),
       sessionId,
     });
 
@@ -912,7 +986,7 @@ test.describe('Hooks ON / Lifecycle', () => {
 
     // SessionStart registers the session with the hook server so that the next
     // event (PreToolUseBash) drives the agent visible rather than landing in the
-    // pre-registration buffer (same pattern as A7).
+    // pre-registration buffer (same pattern as the spawn-paths external test).
     await sendHookEvent(serverConfig, sessionStartStartup(sessionId, workspaceDir, transcriptPath));
 
     // Drive the agent active first (so the waiting transition is a real state
@@ -947,7 +1021,7 @@ test.describe('Hooks ON / Lifecycle', () => {
       .toContain('done');
   });
 
-  // C9: verify restored agents skip the matrix-rain spawn animation.
+  // verify restored agents skip the matrix-rain spawn animation.
   //
   // Invariant: useExtensionMessages.ts:153 passes skipSpawnEffect=true when
   // creating characters from the existingAgents payload. If someone drops
@@ -971,7 +1045,9 @@ test.describe('Hooks ON / Lifecycle', () => {
   // starting at first character observation post-restore. A broken impl
   // (skipSpawnEffect=false) would show 'spawn' in at least one early sample
   // because the matrix effect lives ~300ms before transitioning to null.
-  test('C9 restored agents skip spawn effect (no matrix animation)', async ({ pixelAgents }) => {
+  test('restored agents skip the matrix spawn animation @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { window, tmpHome, mockLogFile } = pixelAgents;
     let frame = pixelAgents.frame;
 
@@ -985,7 +1061,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     await waitForClaudeHookSetup(tmpHome);
     await arrangeNextClaudeInvocation(
       tmpHome,
-      claudeScenario('C9 restored agents skip spawn effect').holdOpenFor(20_000).build(),
+      claudeScenario('restored agents skip spawn effect').holdOpenFor(20_000).build(),
     );
     await spawnInternalAgentAndWait(frame, tmpHome, mockLogFile);
 
@@ -1042,7 +1118,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     }
   });
 
-  // C5: verify formatToolStatus produces the right overlay text for every
+  // verify formatToolStatus produces the right overlay text for every
   // PreToolUse'd tool, not just Bash. Every other e2e test fires Bash and
   // asserts "Running: npm test"; the 9 other tool-name branches in
   // claudeProvider.formatToolStatus had zero direct coverage prior to this.
@@ -1051,7 +1127,9 @@ test.describe('Hooks ON / Lifecycle', () => {
   // expected overlay text. If formatToolStatus regresses, this test catches
   // it. The agent stays the same throughout; each PreToolUse swaps the
   // active tool text, and PostToolUse clears it before the next.
-  test('C5 tool status text matches every PreToolUse tool', async ({ pixelAgents }) => {
+  test('tool status text matches every PreToolUse tool name @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -1063,13 +1141,13 @@ test.describe('Hooks ON / Lifecycle', () => {
 
     await waitForClaudeHookSetup(tmpHome);
     const serverConfig = await waitForHookServer(tmpHome);
-    const sessionId = 'c5-tool-status';
+    const sessionId = 'tool-status-matrix-session';
 
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
       mockLogFile,
-      scenario: claudeScenario('C5 tool status text matrix').holdOpenFor(8_000).build(),
+      scenario: claudeScenario('tool status text matrix').holdOpenFor(8_000).build(),
       sessionId,
     });
 
@@ -1082,7 +1160,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectOverlayCount(frame, 1);
     await expectOverlayVisible(frame, 'Running: npm test');
 
-    // Task / Agent tools follow the sub-character code path (covered by A1)
+    // Task / Agent tools follow the sub-character code path (covered by the basic-spawn test)
     // and don't change the parent overlay text — they're excluded here.
     // WebSearch returns "Searching the web" but is covered implicitly by
     // the same code branch as Glob/Grep; one Search variant is enough.
@@ -1120,11 +1198,13 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectOverlayCount(frame, 0);
   });
 
-  // C10: verify playPermissionSound fires on agentToolPermission.
-  // Companion to C8 (which covers playDoneSound). The webview's permission
+  // verify playPermissionSound fires on agentToolPermission.
+  // Companion to the done-sound test (which fires on agentStatus: waiting). The webview's permission
   // path is webview-ui/src/hooks/useExtensionMessages.ts:354 — same
-  // playedSounds instrumentation as C8, just the other sound function.
-  test('C10 permission chime fires on agentToolPermission', async ({ pixelAgents }) => {
+  // playedSounds instrumentation as the done-chime test, just the other sound function.
+  test('permission sound chime fires on agentToolPermission @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -1136,13 +1216,13 @@ test.describe('Hooks ON / Lifecycle', () => {
 
     await waitForClaudeHookSetup(tmpHome);
     const serverConfig = await waitForHookServer(tmpHome);
-    const sessionId = 'c10-permission-chime';
+    const sessionId = 'permission-chime-session';
 
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
       mockLogFile,
-      scenario: claudeScenario('C10 permission chime').holdOpenFor(3_000).build(),
+      scenario: claudeScenario('permission sound chime smoke').holdOpenFor(3_000).build(),
       sessionId,
     });
 
@@ -1178,7 +1258,7 @@ test.describe('Hooks ON / Lifecycle', () => {
       .toContain('permission');
   });
 
-  // C11 group: claudeHookInstaller side effects on ~/.claude/settings.json.
+  // Hook installer side effects: claudeHookInstaller side effects on ~/.claude/settings.json.
   //
   // Background: when "Instant Detection (Hooks)" is toggled in Settings, the
   // extension writes (install) or rewrites (uninstall) ~/.claude/settings.json
@@ -1232,11 +1312,13 @@ test.describe('Hooks ON / Lifecycle', () => {
     return false;
   }
 
-  // C11a: the extension installs the pixel-agents hook on startup with the
+  // the extension installs the pixel-agents hook on startup with the
   // default hooksEnabled=true. Sanity check — if this fails, claudeHookInstaller
   // never ran, and every other hooks-on test is operating against an empty
   // settings.json (i.e., hooks are silently no-op'd).
-  test('C11a pixel-agents hook is installed on extension startup', async ({ pixelAgents }) => {
+  test('pixel-agents hook is installed in settings.json on extension startup @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { tmpHome } = pixelAgents;
 
     await waitForClaudeHookSetup(tmpHome);
@@ -1249,10 +1331,12 @@ test.describe('Hooks ON / Lifecycle', () => {
     expect(pixelAgentsHookPresent(settings, 'PreToolUse')).toBe(true);
   });
 
-  // C11b: toggling "Instant Detection" off uninstalls the pixel-agents hook;
+  // toggling "Instant Detection" off uninstalls the pixel-agents hook;
   // toggling it back on reinstalls. Round-trip is idempotent (no duplicate
   // entries on the second install).
-  test('C11b hook install/uninstall round-trips via Settings toggle', async ({ pixelAgents }) => {
+  test('hook install and uninstall round-trip via the Settings toggle @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome } = pixelAgents;
 
     await waitForClaudeHookSetup(tmpHome);
@@ -1289,14 +1373,16 @@ test.describe('Hooks ON / Lifecycle', () => {
     expect(pixelAgentsCount).toBe(1);
   });
 
-  // C12: permission bubble auto-clears when a fresh PreToolUse arrives.
+  // permission bubble auto-clears when a fresh PreToolUse arrives.
   //
   // Implementation invariant: useExtensionMessages.ts:269 calls
   // os.clearPermissionBubble(id) on every agentToolStart unless
   // permissionActive=true is set on the new tool. Without this, the "Needs
   // approval" overlay would linger across tool transitions inside the same
   // session.
-  test('C12 permission bubble clears when a fresh tool starts', async ({ pixelAgents }) => {
+  test('permission bubble auto-clears when a fresh PreToolUse arrives @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -1308,13 +1394,13 @@ test.describe('Hooks ON / Lifecycle', () => {
 
     await waitForClaudeHookSetup(tmpHome);
     const serverConfig = await waitForHookServer(tmpHome);
-    const sessionId = 'c12-permission-clear';
+    const sessionId = 'permission-bubble-clear-session';
 
     await spawnExternalClaudeScenario({
       tmpHome,
       workspaceDir,
       mockLogFile,
-      scenario: claudeScenario('C12 permission bubble auto-clear').holdOpenFor(5_000).build(),
+      scenario: claudeScenario('permission bubble auto-clear').holdOpenFor(5_000).build(),
       sessionId,
     });
 
@@ -1344,7 +1430,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expectNoOverlay(frame, 'Needs approval', 2_000);
   });
 
-  // C13: persisted settings survive a webview reload.
+  // persisted settings survive a webview reload.
   //
   // The webview's settings UI is hydrated from `settingsLoaded` on every
   // `webviewReady`. The extension reads from its persisted state (workspace
@@ -1356,7 +1442,9 @@ test.describe('Hooks ON / Lifecycle', () => {
   // Trigger: toggle Always Show Labels off, close+reopen the panel (forces a
   // fresh webviewReady), open the Settings modal, read the indicator state.
   // It must still be unchecked.
-  test('C13 Settings toggles persist across webview reload', async ({ pixelAgents }) => {
+  test('settings toggles persist across a webview reload @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { window } = pixelAgents;
     let frame = pixelAgents.frame;
 
@@ -1368,7 +1456,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     expect(await getSettingChecked(frame, 'Always Show Labels')).toBe(!initial);
 
     // Force a fresh webview by closing and reopening the panel (same
-    // mechanism C9 uses for the existingAgents restore path).
+    // mechanism the restored-agents test uses for the existingAgents restore path).
     await closeBottomPanel(window);
     await openPixelAgentsPanel(window);
     frame = await getPixelAgentsFrame(window);
@@ -1378,7 +1466,7 @@ test.describe('Hooks ON / Lifecycle', () => {
     expect(await getSettingChecked(frame, 'Always Show Labels')).toBe(!initial);
   });
 
-  // C15: layout editor smoke. Verifies entering edit mode reveals the editor
+  // layout editor smoke. Verifies entering edit mode reveals the editor
   // toolbar, that a save round-trips through layoutPersistence.ts to
   // ~/.pixel-agents/layout.json, and that exiting edit mode hides the toolbar.
   //
@@ -1392,7 +1480,9 @@ test.describe('Hooks ON / Lifecycle', () => {
   // "the saved file contains a layout the editor session produced." Canvas
   // pixel coordinates are not pinned because we only need ANY change to land
   // on disk to prove the round trip works.
-  test('C15 layout editor smoke (enter, paint, save, persist, exit)', async ({ pixelAgents }) => {
+  test('layout editor enter paint save persist and exit round-trip @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome } = pixelAgents;
 
     const layoutPath = path.join(tmpHome, '.pixel-agents', 'layout.json');
@@ -1461,10 +1551,12 @@ test.describe('Hooks ON / Lifecycle', () => {
     await expect(paintFloorBtn).toBeHidden({ timeout: 5_000 });
   });
 
-  // C11c: the regression that historically bit users. A third-party hook
+  // the regression that historically bit users. A third-party hook
   // entry pre-existing in settings.json must survive an uninstall of the
   // pixel-agents hook untouched.
-  test('C11c uninstall preserves a pre-existing third-party hook', async ({ pixelAgents }) => {
+  test('hook uninstall preserves a pre-existing third-party hook entry @area:cross-cutting', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome } = pixelAgents;
 
     await waitForClaudeHookSetup(tmpHome);

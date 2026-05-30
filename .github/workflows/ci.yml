@@ -67,6 +67,17 @@ jobs:
           fi
         continue-on-error: true
 
+      - name: E2E inventory drift check
+        id: e2e_inventory_drift
+        if: always() && steps.install_dependencies.outcome == 'success'
+        run: |
+          npm run e2e:inventory
+          if ! git diff --exit-code e2e/README.md; then
+            echo "::error::e2e/README.md inventory is out of sync with the test suite. Run 'npm run e2e:inventory' locally and commit the result."
+            exit 1
+          fi
+        continue-on-error: true
+
       # --- Quality Checks (blocking) ---
 
       - name: Type Check

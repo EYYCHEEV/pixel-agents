@@ -3,6 +3,7 @@ import type { TestInfo } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { applyAllureLabels } from '../helpers/allure-labels';
 import { launchStandalone, type StandaloneSession } from '../helpers/standalone';
 
 export interface StandaloneContext extends StandaloneSession {}
@@ -41,7 +42,16 @@ async function attachText(
   }
 }
 
-export const test = base.extend<{ standalone: StandaloneContext }>({
+export const test = base.extend<{ standalone: StandaloneContext; _allureLabels: void }>({
+  // Auto-fixture: tag every test with Allure epic + feature derived from its
+  // @area: annotation and enclosing describe path. Runs before standalone.
+  _allureLabels: [
+    async ({}, use, testInfo) => {
+      await applyAllureLabels(testInfo);
+      await use();
+    },
+    { auto: true },
+  ],
   standalone: async ({ page }, use, testInfo) => {
     const standalone = await launchStandalone(page);
 

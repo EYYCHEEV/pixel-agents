@@ -41,8 +41,10 @@ async function expectTeammateActivity(frame: Frame, text: string): Promise<void>
   await expectNoOverlayWithTexts(frame, ['LEAD', text]);
 }
 
-test.describe('Hooks ON / Teams', () => {
-  test('A3 internal inline teammate routing', async ({ pixelAgents }) => {
+test.describe('Hooks ON / teams', () => {
+  test('internal terminal lead with inline teammate routes tools to teammate @area:teams', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -57,7 +59,7 @@ test.describe('Hooks ON / Teams', () => {
     const panelFrame = await getPixelAgentsFrame(window);
     const serverConfig = await waitForHookServer(tmpHome);
 
-    const teamName = uniqueTeamName('a3-inline');
+    const teamName = uniqueTeamName('hooks-on-internal-inline');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     appendTeamMetadata(spawned.jsonlFile, teamName);
     await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
@@ -87,7 +89,9 @@ test.describe('Hooks ON / Teams', () => {
     await expectTeammateActivity(panelFrame, 'Searching the web');
   });
 
-  test('A5 internal tmux teammate routing', async ({ pixelAgents }) => {
+  test('internal terminal lead with tmux teammate routes tools to teammate @area:teams', async ({
+    pixelAgents,
+  }) => {
     const { frame, window, tmpHome, mockLogFile } = pixelAgents;
 
     await setSettings(frame, {
@@ -102,7 +106,7 @@ test.describe('Hooks ON / Teams', () => {
     const panelFrame = await getPixelAgentsFrame(window);
     const serverConfig = await waitForHookServer(tmpHome);
 
-    const teamName = uniqueTeamName('a5-tmux');
+    const teamName = uniqueTeamName('hooks-on-internal-tmux');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
     appendTeamMetadata(spawned.jsonlFile, teamName);
     await expectOverlayVisibleWithTexts(panelFrame, ['LEAD']);
@@ -134,7 +138,9 @@ test.describe('Hooks ON / Teams', () => {
     await expectLeadActivity(panelFrame, 'Needs approval');
   });
 
-  test('A9 external inline teammate routing', async ({ pixelAgents }) => {
+  test('external session lead with inline teammate routes tools to teammate @area:teams', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir } = pixelAgents;
 
     await setSettings(frame, {
@@ -145,10 +151,10 @@ test.describe('Hooks ON / Teams', () => {
     });
 
     const serverConfig = await waitForHookServer(tmpHome);
-    const sessionId = 'a9-external-inline';
+    const sessionId = 'hooks-on-external-inline-session';
     const { projectDir, transcriptPath } = createClaudeTranscript(tmpHome, workspaceDir, sessionId);
 
-    const teamName = uniqueTeamName('a9-inline');
+    const teamName = uniqueTeamName('hooks-on-external-inline');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
 
     await sendHookEvent(serverConfig, sessionStartStartup(sessionId, workspaceDir, transcriptPath));
@@ -185,7 +191,9 @@ test.describe('Hooks ON / Teams', () => {
     await expectTeammateActivity(frame, 'Searching the web');
   });
 
-  test('A11 external tmux teammate routing', async ({ pixelAgents }) => {
+  test('external session lead with tmux teammate routes tools to teammate @area:teams', async ({
+    pixelAgents,
+  }) => {
     const { frame, tmpHome, workspaceDir } = pixelAgents;
 
     await setSettings(frame, {
@@ -196,10 +204,10 @@ test.describe('Hooks ON / Teams', () => {
     });
 
     const serverConfig = await waitForHookServer(tmpHome);
-    const sessionId = 'a11-external-tmux';
+    const sessionId = 'hooks-on-external-tmux-session';
     const { projectDir, transcriptPath } = createClaudeTranscript(tmpHome, workspaceDir, sessionId);
 
-    const teamName = uniqueTeamName('a11-tmux');
+    const teamName = uniqueTeamName('hooks-on-external-tmux');
     seedTeamConfig(tmpHome, teamName, ['lead', TEAMMATE_ROLE]);
 
     await sendHookEvent(serverConfig, sessionStartStartup(sessionId, workspaceDir, transcriptPath));

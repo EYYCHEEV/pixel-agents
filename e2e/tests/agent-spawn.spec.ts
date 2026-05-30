@@ -18,7 +18,7 @@ import path from 'path';
 import { launchVSCode, waitForWorkbench } from '../helpers/launch';
 import { clickAddAgent, getPixelAgentsFrame, openPixelAgentsPanel } from '../helpers/webview';
 
-test('clicking + Agent spawns mock claude and creates a JSONL session file', async ({}, testInfo) => {
+test('clicking + Agent spawns mock claude and creates a JSONL session file @area:spawn', async ({}, testInfo) => {
   const session = await launchVSCode(testInfo.title);
   const { window, tmpHome, mockLogFile } = session;
   const runVideo = window.video();
