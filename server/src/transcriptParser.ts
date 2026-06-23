@@ -376,6 +376,8 @@ export function processTranscriptLine(
           type: 'agentStatus',
           id: agentId,
           status: 'waiting',
+          // turn_duration = the turn completed, so this is "Done".
+          awaitingInput: false,
         });
       }
     } else if (record.type && !agent.seenUnknownRecordTypes.has(record.type)) {

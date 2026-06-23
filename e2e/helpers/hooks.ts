@@ -191,6 +191,15 @@ export function idlePrompt(sessionId: string): HookEventPayload {
   };
 }
 
+/** Stop = the agent finished its turn. Normalizes to turnEnd (no awaitingInput),
+ *  surfaced as the "Done" label (vs idlePrompt's "Waiting for input"). */
+export function stop(sessionId: string): HookEventPayload {
+  return {
+    session_id: sessionId,
+    hook_event_name: 'Stop',
+  };
+}
+
 export function teammateIdle(sessionId: string, agentType: string): HookEventPayload {
   return {
     session_id: sessionId,

@@ -797,14 +797,10 @@ test.describe('Hooks ON / lifecycle', () => {
     });
 
     await expectOverlayCount(frame, 3, 12_000);
-    await expectOverlayVisibleWithTexts(
-      frame,
-      [INLINE_TEAMMATE_ROLE, 'Might be waiting for input'],
-      8_000,
-    );
+    await expectOverlayVisibleWithTexts(frame, [INLINE_TEAMMATE_ROLE, 'Waiting for input'], 8_000);
     await expectOverlayVisibleWithTexts(frame, [SECOND_TEAMMATE_ROLE, 'Running: npm run reviewer']);
-    await expectNoOverlayWithTexts(frame, [SECOND_TEAMMATE_ROLE, 'Might be waiting for input']);
-    await expectNoOverlayWithTexts(frame, ['LEAD', 'Might be waiting for input']);
+    await expectNoOverlayWithTexts(frame, [SECOND_TEAMMATE_ROLE, 'Waiting for input']);
+    await expectNoOverlayWithTexts(frame, ['LEAD', 'Waiting for input']);
   });
 
   test('rapid /clear then new tool within 500ms lands on the reassigned agent @area:lifecycle', async ({
@@ -1005,7 +1001,7 @@ test.describe('Hooks ON / lifecycle', () => {
     });
 
     await sendHookEvent(serverConfig, idlePrompt(sessionId));
-    await expectOverlayVisible(frame, 'Might be waiting for input');
+    await expectOverlayVisible(frame, 'Waiting for input');
 
     await expect
       .poll(

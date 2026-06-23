@@ -21,7 +21,7 @@ import { EditorToolbar } from './office/editor/EditorToolbar.js';
 import { OfficeState } from './office/engine/officeState.js';
 import { isRotatable } from './office/layout/furnitureCatalog.js';
 import { EditTool } from './office/types.js';
-import { isBrowserRuntime } from './runtime.js';
+import { isBrowserRuntime, isE2E } from './runtime.js';
 import { installTestHooks } from './testHooks.js';
 import { transport } from './transport/index.js';
 
@@ -29,7 +29,10 @@ import { transport } from './transport/index.js';
 const officeStateRef = { current: null as OfficeState | null };
 const editorState = new EditorState();
 
-installTestHooks(officeStateRef);
+// Test-only observability hooks (message/sound logs, addAgent wrapper, selectAgent).
+// Installed only under the e2e harness so they never patch prototypes or grow
+// unbounded logs in a real user's session.
+if (isE2E) installTestHooks(officeStateRef);
 
 function getOfficeState(): OfficeState {
   if (!officeStateRef.current) {
@@ -263,6 +266,7 @@ function App() {
           agentTools={agentTools}
           agentStatuses={agentStatuses}
           subagentTools={subagentTools}
+          officeState={officeState}
           onSelectAgent={handleSelectAgent}
         />
       )}

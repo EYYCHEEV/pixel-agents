@@ -664,10 +664,11 @@ export class OfficeState {
     }
   }
 
-  showWaitingBubble(id: number): void {
+  showWaitingBubble(id: number, awaitingInput = false): void {
     const ch = this.characters.get(id);
     if (ch) {
       ch.bubbleType = 'waiting';
+      ch.waitingAwaitingInput = awaitingInput;
       ch.bubbleTimer = WAITING_BUBBLE_DURATION_SEC;
     }
   }

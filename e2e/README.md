@@ -133,8 +133,8 @@ This section is auto-generated. Do not edit between the markers; CI fails on dri
 
 ### `@area:spawn` (2 tests)
 
-- `e2e/claude/hooks-on/basic.spec.ts:30` — internal terminal spawns agent and Task subagent appears then despawns (Hooks ON / spawn paths)
-- `e2e/claude/hooks-on/basic.spec.ts:82` — external Claude session adopted via hook confirmation lifecycle (Hooks ON / spawn paths)
+- `e2e/claude/hooks-on/basic.spec.ts:31` — internal terminal spawns agent and Task subagent appears then despawns (Hooks ON / spawn paths)
+- `e2e/claude/hooks-on/basic.spec.ts:83` — external Claude session adopted via hook confirmation lifecycle (Hooks ON / spawn paths)
 
 ### `@area:lifecycle` (21 tests)
 

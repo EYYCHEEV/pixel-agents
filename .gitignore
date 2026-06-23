@@ -37,6 +37,7 @@ allure-report/
 /sprites-export
 .vercel/
 agent-orchestrator.yaml
+.worktrees
 
 # Local notes (not for commit)
 /notes/

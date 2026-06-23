@@ -276,6 +276,16 @@ export async function launchVSCode(testTitle: string): Promise<VSCodeSession> {
 
     const window = await app.firstWindow();
 
+    // Mark this as the e2e harness BEFORE the Pixel Agents webview iframe loads.
+    // addInitScript runs in every frame on attach/navigate (including that
+    // iframe, which opens later when the panel is shown), so the webview reads
+    // __PIXEL_AGENTS_E2E === true and installs its test-only observability hooks
+    // (window.__pixelAgentsTestHooks). In production the flag is absent, so
+    // those hooks (and their unbounded logs) never run.
+    await window.addInitScript(() => {
+      (window as unknown as { __PIXEL_AGENTS_E2E?: boolean }).__PIXEL_AGENTS_E2E = true;
+    });
+
     // The Ozone headless backend ignores --window-size CLI flags, so VS Code
     // opens at a tiny default size on Linux. Resize via the Electron API after
     // the window exists — getAllWindows() is empty before firstWindow() resolves.

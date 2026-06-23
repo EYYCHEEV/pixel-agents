@@ -8,6 +8,7 @@ import {
   sendHookEvent,
   sessionEndExit,
   sessionStartStartup,
+  stop,
   waitForHookServer,
 } from '../../../helpers/hooks';
 import { spawnInternalAgentAndWait } from '../../../helpers/internal-agent';
@@ -124,11 +125,16 @@ test.describe('Hooks ON / spawn paths', () => {
     await sendHookEvent(serverConfig, permissionRequest(sessionId));
     await expectOverlayVisible(frame, 'Needs approval');
 
-    // 4. Notification(idle_prompt) → "Might be waiting for input"
-    await sendHookEvent(serverConfig, idlePrompt(sessionId));
-    await expectOverlayVisible(frame, 'Might be waiting for input');
+    // 4. Stop → finished turn shows ONLY the checkmark; the label falls back to
+    //    idle (no dedicated text), distinct from idle_prompt's "Waiting for input".
+    await sendHookEvent(serverConfig, stop(sessionId));
+    await expectOverlayVisible(frame, 'Idle');
 
-    // 5. SessionEnd(exit) → agent is removed.
+    // 5. Notification(idle_prompt) → "Waiting for input"
+    await sendHookEvent(serverConfig, idlePrompt(sessionId));
+    await expectOverlayVisible(frame, 'Waiting for input');
+
+    // 6. SessionEnd(exit) → agent is removed.
     await sendHookEvent(serverConfig, sessionEndExit(sessionId));
     await expectOverlayCount(frame, 0);
   });

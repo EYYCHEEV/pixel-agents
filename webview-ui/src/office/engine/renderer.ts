@@ -495,6 +495,10 @@ function renderBubbles(
 ): void {
   for (const ch of characters) {
     if (!ch.bubbleType) continue;
+    // The green checkmark bubble only represents "done" (turn finished). The
+    // idle "Waiting for input" state communicates via its overlay label, not a
+    // bubble, so skip the bubble for it.
+    if (ch.bubbleType === 'waiting' && ch.waitingAwaitingInput) continue;
 
     const sprite =
       ch.bubbleType === 'permission' ? BUBBLE_PERMISSION_SPRITE : BUBBLE_WAITING_SPRITE;

@@ -188,6 +188,11 @@ export async function launchStandalone(page: Page): Promise<StandaloneSession> {
 
   try {
     await page.setViewportSize({ width: 1280, height: 800 });
+    // Mark this as the e2e harness before navigation so the standalone webview
+    // installs its test-only observability hooks (window.__pixelAgentsTestHooks).
+    await page.addInitScript(() => {
+      (window as unknown as { __PIXEL_AGENTS_E2E?: boolean }).__PIXEL_AGENTS_E2E = true;
+    });
     await installMessageRecorder(page);
     await waitForHttpOk(`${hostUrl}/api/health`);
     const hookServerConfig = await waitForHookServer(tmpHome);

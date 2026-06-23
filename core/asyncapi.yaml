@@ -239,6 +239,12 @@ components:
           type: integer
         status:
           $ref: '#/components/schemas/AgentActivityStatus'
+        awaitingInput:
+          type: boolean
+          description: >-
+            Only meaningful when status is "waiting". True when the agent went
+            idle waiting on the user (drives the "Waiting for input" label);
+            absent/false means the agent finished its turn ("Done").
 
     AgentActivityStatus:
       description: Activity state of an agent.

@@ -84,7 +84,7 @@ test.describe('Standalone / hooks', () => {
       hook_event_name: 'Notification',
       notification_type: 'idle_prompt',
     });
-    await expectOverlayVisible(page, 'Might be waiting for input');
+    await expectOverlayVisible(page, 'Waiting for input');
     const notificationMessages = await standalone.drainMessages();
     expect(notificationMessages.some((message) => message.type === 'agentToolsClear')).toBe(true);
     expect(

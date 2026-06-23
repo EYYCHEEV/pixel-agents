@@ -12,6 +12,7 @@ import {
   PERMISSION_NOTE_DURATION_SEC,
   PERMISSION_VOLUME,
 } from './constants.js';
+import { isE2E } from './runtime.js';
 
 let soundEnabled = true;
 let audioCtx: AudioContext | null = null;
@@ -19,10 +20,10 @@ let audioCtx: AudioContext | null = null;
 /** E2E test hook: append every (attempted) sound invocation to a window-side log
  *  under window.__pixelAgentsTestHooks.playedSounds (namespace and type
  *  declared by testHooks.ts). Records BEFORE the soundEnabled gate so tests
- *  verify dispatch independent of user audio prefs.
- *  Read-only marker; no production behavior change. */
+ *  verify dispatch independent of user audio prefs. Gated on the e2e harness
+ *  flag so this unbounded log never grows in a real session. */
 function recordSoundForTests(kind: 'done' | 'permission'): void {
-  if (typeof window === 'undefined') return;
+  if (!isE2E || typeof window === 'undefined') return;
   if (!window.__pixelAgentsTestHooks) window.__pixelAgentsTestHooks = {};
   if (!window.__pixelAgentsTestHooks.playedSounds) {
     window.__pixelAgentsTestHooks.playedSounds = [];

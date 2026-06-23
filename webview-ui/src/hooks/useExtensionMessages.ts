@@ -13,6 +13,7 @@ import {
 } from '../office/toolUtils.js';
 import type { OfficeLayout, ToolActivity } from '../office/types.js';
 import { setWallSprites } from '../office/wallTiles.js';
+import { isE2E } from '../runtime.js';
 import { transport } from '../transport/index.js';
 
 export interface SubagentCharacter {
@@ -127,8 +128,9 @@ export function useExtensionMessages(
       // CI / e2e diagnostic: record every received transport message on the
       // window-side log. The fixture reads window.__pixelAgentsTestHooks.
       // messageLog and attaches as JSON so CI failures can see the exact
-      // sequence of messages the webview actually processed.
-      if (typeof window !== 'undefined') {
+      // sequence of messages the webview actually processed. Gated on the e2e
+      // harness flag so this unbounded log never grows in a real session.
+      if (isE2E && typeof window !== 'undefined') {
         if (!window.__pixelAgentsTestHooks) window.__pixelAgentsTestHooks = {};
         if (!window.__pixelAgentsTestHooks.messageLog) {
           window.__pixelAgentsTestHooks.messageLog = [];
@@ -360,7 +362,7 @@ export function useExtensionMessages(
         });
         os.setAgentActive(id, status === 'active');
         if (status === 'waiting') {
-          os.showWaitingBubble(id);
+          os.showWaitingBubble(id, msg.awaitingInput === true);
           playDoneSound();
         }
       } else if (msg.type === 'agentToolPermission') {

@@ -23,7 +23,11 @@ import type { OfficeState } from '../engine/officeState.js';
 import type { ToolActivity } from '../types.js';
 import { CharacterState, TILE_SIZE } from '../types.js';
 
-const WAITING_ACTIVITY_TEXT = 'Might be waiting for input';
+// Both turn-end states show the green checkmark bubble. A finished turn (Stop)
+// shows ONLY the checkmark (the label falls through to its normal idle text);
+// going idle waiting on the user (Notification(idle_prompt)) additionally
+// surfaces this label. Driven by Character.waitingAwaitingInput.
+const WAITING_INPUT_ACTIVITY_TEXT = 'Waiting for input';
 
 interface ToolOverlayProps {
   officeState: OfficeState;
@@ -43,9 +47,13 @@ function getActivityText(
   agentTools: Record<number, ToolActivity[]>,
   isActive: boolean,
   bubbleType: 'permission' | 'waiting' | null,
+  waitingAwaitingInput: boolean,
 ): string {
   if (bubbleType === 'permission') return 'Needs approval';
-  if (bubbleType === 'waiting') return WAITING_ACTIVITY_TEXT;
+  // Only the idle case ("Waiting for input") gets a dedicated label. A finished
+  // turn (Stop, waitingAwaitingInput=false) falls through so the checkmark alone
+  // signals "done", same as the original behavior.
+  if (bubbleType === 'waiting' && waitingAwaitingInput) return WAITING_INPUT_ACTIVITY_TEXT;
 
   const tools = agentTools[agentId];
   if (tools && tools.length > 0) {
@@ -131,12 +139,33 @@ export function ToolOverlay({
         const screenY =
           (deviceOffsetY + (ch.y + sittingOffset - TOOL_OVERLAY_VERTICAL_OFFSET) * zoom) / dpr;
 
+        // A "Done" agent (finished turn: waiting bubble without awaitingInput)
+        // shows ONLY its floating green checkmark bubble, never the label panel
+        // (the panel would cover the bubble). Render an empty positioned marker
+        // so overlay counts stay stable and hover/select can still bring the
+        // panel back. When always-show is off, the early return above already
+        // keeps the panel hidden for idle agents.
+        const isDone = ch.bubbleType === 'waiting' && !ch.waitingAwaitingInput;
+        if (isDone && !isSelected && !isHovered) {
+          return (
+            <div
+              key={id}
+              className="absolute"
+              style={{ left: screenX, top: screenY, pointerEvents: 'none' }}
+              data-testid="agent-overlay"
+              data-agent-id={id}
+            />
+          );
+        }
+
         // Get activity text
         const hasWaitingBubble = ch.bubbleType === 'waiting';
         const subHasPermission = isSub && ch.bubbleType === 'permission';
         let activityText: string;
-        if (hasWaitingBubble) {
-          activityText = WAITING_ACTIVITY_TEXT;
+        if (hasWaitingBubble && ch.waitingAwaitingInput) {
+          // Idle, waiting on the user -> dedicated label. A finished turn (Stop)
+          // shows only the checkmark and falls through to the normal idle text.
+          activityText = WAITING_INPUT_ACTIVITY_TEXT;
         } else if (isSub) {
           if (subHasPermission) {
             activityText = 'Needs approval';
@@ -145,7 +174,13 @@ export function ToolOverlay({
             activityText = sub ? sub.label : 'Subtask';
           }
         } else {
-          activityText = getActivityText(id, agentTools, ch.isActive, ch.bubbleType);
+          activityText = getActivityText(
+            id,
+            agentTools,
+            ch.isActive,
+            ch.bubbleType,
+            ch.waitingAwaitingInput ?? false,
+          );
         }
 
         // Determine dot color
