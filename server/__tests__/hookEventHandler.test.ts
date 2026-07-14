@@ -304,6 +304,24 @@ describe('HookEventHandler', () => {
     expect(agent.isWaiting).toBe(true);
   });
 
+  it('does not auto-discover fleet projections as legacy hook agents', () => {
+    const fleetAgent = createTestAgent({
+      id: 1,
+      sessionId: 'shared-session',
+      fleetKey: 'fleet-key',
+      fleetStatus: 'running',
+    } as Partial<AgentState>);
+    agents.set(1, fleetAgent);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'Stop',
+      session_id: 'shared-session',
+    });
+
+    expect(fleetAgent.isWaiting).toBe(false);
+    expect(mockWebview.messages).toHaveLength(0);
+  });
+
   // ── Dispose ─────────────────────────────────────────────────
 
   it('dispose cleans up timers and maps', () => {
@@ -343,6 +361,24 @@ describe('HookEventHandler', () => {
     });
 
     expect(agent.hookDelivered).toBe(true);
+  });
+
+  it('SessionStart does not register a fleet projection with the legacy router', () => {
+    const fleetAgent = createTestAgent({
+      id: 1,
+      sessionId: 'shared-session',
+      fleetKey: 'fleet-key',
+      hookDelivered: false,
+    } as Partial<AgentState>);
+    agents.set(1, fleetAgent);
+
+    handler.handleEvent('claude', {
+      hook_event_name: 'SessionStart',
+      session_id: 'shared-session',
+      source: 'startup',
+    });
+
+    expect(fleetAgent.hookDelivered).toBe(false);
   });
 
   it('SessionStart(source=clear) reassigns agent with pendingClear', () => {

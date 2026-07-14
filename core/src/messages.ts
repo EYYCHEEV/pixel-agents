@@ -10,6 +10,7 @@
 export type ServerMessage =
   | ProviderCapabilities
   | AgentCreated
+  | AgentFleetUpdated
   | AgentClosed
   | AgentSelected
   | ExistingAgents
@@ -67,6 +68,37 @@ export interface AgentCreated {
   id: number;
   folderName?: string;
   isExternal?: boolean;
+  fleet?: FleetAgentMeta;
+}
+
+export interface FleetAgentMeta {
+  providerId: string;
+  hostId: string;
+  sessionId: string;
+  agentId: string;
+  parentAgentId?: number;
+  isChild?: boolean;
+  role?: string;
+  model?: string;
+  projectLabel?: string;
+  activity?: string;
+  inferred?: boolean;
+  status: AgentActivityStatus;
+}
+
+export type AgentActivityStatus =
+  | 'active'
+  | 'running'
+  | 'waiting'
+  | 'idle'
+  | 'parked'
+  | 'completed'
+  | 'disconnected';
+
+export interface AgentFleetUpdated {
+  type: 'agentFleetUpdated';
+  id: number;
+  fleet: FleetAgentMeta;
 }
 
 export interface AgentClosed {
@@ -85,6 +117,7 @@ export interface ExistingAgents {
   agentMeta: Record<string, AgentSeatMeta>;
   folderNames: Record<string, string>;
   externalAgents: Record<string, boolean>;
+  agentDetails: Record<string, FleetAgentMeta>;
 }
 
 export interface AgentSeatMeta {
@@ -98,9 +131,8 @@ export interface AgentStatus {
   id: number;
   status: AgentActivityStatus;
   awaitingInput?: boolean;
+  activity?: string;
 }
-
-export type AgentActivityStatus = 'active' | 'waiting';
 
 export interface AgentToolStart {
   type: 'agentToolStart';

@@ -15,9 +15,20 @@ vi.mock('vscode', () => ({
 }));
 
 import { AgentStateStore } from '../src/agentStateStore.js';
-import { DISMISSED_COOLDOWN_MS, EXTERNAL_ACTIVE_THRESHOLD_MS } from '../src/constants.js';
+import {
+  DISMISSED_COOLDOWN_MS,
+  EXTERNAL_ACTIVE_THRESHOLD_MS,
+  EXTERNAL_STALE_CHECK_INTERVAL_MS,
+} from '../src/constants.js';
 import { DismissalTracker } from '../src/dismissalTracker.js';
-import { scanExternalDir, scanForNewJsonlFiles, setDismissalTracker } from '../src/fileWatcher.js';
+import {
+  scanExternalDir,
+  scanForNewJsonlFiles,
+  setAgentRemovalCallback,
+  setDismissalTracker,
+  startStaleExternalAgentCheck,
+} from '../src/fileWatcher.js';
+import type { AgentState } from '../src/types.js';
 
 /**
  * Tests for the DismissalTracker integration with fileWatcher's scanner functions.
@@ -78,6 +89,8 @@ describe('fileWatcher dismissal state', () => {
     for (const t of pollingTimers.values()) clearInterval(t);
     for (const t of waitingTimers.values()) clearTimeout(t);
     for (const t of permissionTimers.values()) clearTimeout(t);
+    setAgentRemovalCallback(null);
+    vi.useRealTimers();
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     } catch {
@@ -282,5 +295,37 @@ describe('fileWatcher dismissal state', () => {
     // Guards against accidental changes that would make these tests lie.
     expect(DISMISSED_COOLDOWN_MS).toBeGreaterThan(60_000);
     expect(EXTERNAL_ACTIVE_THRESHOLD_MS).toBeGreaterThan(30_000);
+  });
+
+  it('excludes fleet projections from transcript stale cleanup', () => {
+    vi.useFakeTimers();
+    const removeAgent = vi.fn();
+    setAgentRemovalCallback(removeAgent);
+    agents.set(
+      1,
+      {
+        id: 1,
+        sessionId: 'fleet-session',
+        isExternal: true,
+        jsonlFile: '',
+        fleetKey: 'fleet-key',
+      } as unknown as AgentState,
+    );
+    agents.set(
+      2,
+      {
+        id: 2,
+        sessionId: 'legacy-session',
+        isExternal: true,
+        jsonlFile: path.join(tmpDir, 'missing.jsonl'),
+      } as unknown as AgentState,
+    );
+    const timer = startStaleExternalAgentCheck(agents, knownJsonlFiles, { current: false });
+
+    vi.advanceTimersByTime(EXTERNAL_STALE_CHECK_INTERVAL_MS);
+
+    expect(removeAgent).toHaveBeenCalledTimes(1);
+    expect(removeAgent).toHaveBeenCalledWith(2);
+    clearInterval(timer);
   });
 });

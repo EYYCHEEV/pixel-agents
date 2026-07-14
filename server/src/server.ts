@@ -6,8 +6,13 @@ import * as path from 'path';
 
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
+import type {
+  AssetCache,
+  ReloadExternalAssetsSideEffect,
+  SetHooksEnabledSideEffect,
+} from './clientMessageHandler.js';
 import { SERVER_JSON_DIR, SERVER_JSON_NAME } from './constants.js';
+import { type FleetRuntime,parseFleetSnapshot } from './fleetRuntime.js';
 import { createHttpServer } from './httpServer.js';
 
 /** Discovery file written to ~/.pixel-agents/server.json so hook scripts can find the server. */
@@ -33,6 +38,19 @@ export interface ServerConfig {
 /** Callback invoked when a hook event is received from a provider's hook script. */
 type HookEventCallback = (providerId: string, event: Record<string, unknown>) => void;
 
+interface ServerStartOptions {
+  store?: AgentStateStore;
+  runtime?: AgentRuntime;
+  fleetRuntime?: FleetRuntime;
+  embedded?: boolean;
+  host?: string;
+  port?: number;
+  staticDir?: string;
+  assetCache?: AssetCache;
+  onSetHooksEnabled?: SetHooksEnabledSideEffect;
+  onReloadExternalAssets?: ReloadExternalAssetsSideEffect;
+}
+
 /**
  * Pixel Agents server: receives hook events, broadcasts state via WebSocket,
  * and optionally serves the SPA in standalone mode.
@@ -40,17 +58,22 @@ type HookEventCallback = (providerId: string, event: Record<string, unknown>) =>
  * Routes (via Fastify in httpServer.ts):
  * - `POST /api/hooks/:providerId` -- hook event (auth required, 64KB body limit)
  * - `GET /api/health` -- health check (no auth)
+ * - `GET /fleet-stream` -- authenticated canonical fleet replication
  * - `GET /ws` -- WebSocket for real-time agent state (auth required)
  *
  * Discovery: writes `~/.pixel-agents/server.json` with port, PID, and auth token.
- * Multi-window: second VS Code window detects running server via server.json and
- * reuses it (does not start a second server).
+ * Multi-window: a second VS Code window reuses the discovered server, mirrors
+ * its fleet stream into the local view, and promotes itself if the owner exits.
  */
 export class PixelAgentsServer {
   private app: FastifyInstance | null = null;
   private config: ServerConfig | null = null;
   private ownsServer = false;
   private callback: HookEventCallback | null = null;
+  private fleetRelay: WebSocket | null = null;
+  private fleetRelayReconnectTimer: NodeJS.Timeout | null = null;
+  private fleetRelayRuntime: FleetRuntime | null = null;
+  private startOptions: ServerStartOptions | undefined;
 
   /** Register a callback for incoming hook events from any provider. */
   onHookEvent(callback: HookEventCallback): void {
@@ -61,27 +84,23 @@ export class PixelAgentsServer {
    * Start the server. If another instance is already running (detected via
    * server.json PID check), reuses that server's config without starting a new one.
    */
-  async start(options?: {
-    store?: AgentStateStore;
-    runtime?: AgentRuntime;
-    embedded?: boolean;
-    host?: string;
-    port?: number;
-    staticDir?: string;
-    assetCache?: AssetCache;
-    onSetHooksEnabled?: SetHooksEnabledSideEffect;
-  }): Promise<ServerConfig> {
+  async start(options?: ServerStartOptions): Promise<ServerConfig> {
+    this.startOptions = options;
     // Check if another instance already has a server running
     const existing = this.readServerJson();
     if (existing && isProcessRunning(existing.pid)) {
       this.config = existing;
       this.ownsServer = false;
+      if (options?.fleetRuntime) {
+        await this.connectFleetRelay(existing, options.fleetRuntime);
+      }
       console.log(
         `[Pixel Agents] Reusing existing server on port ${existing.port} (PID ${existing.pid})`,
       );
       return existing;
     }
 
+    this.stopFleetRelay();
     // Start our own server
     const token = crypto.randomUUID();
     const store = options?.store;
@@ -93,10 +112,12 @@ export class PixelAgentsServer {
       token,
       store: store!,
       runtime: options?.runtime,
+      fleetRuntime: options?.fleetRuntime,
       staticDir: options?.staticDir,
       assetCache: options?.assetCache,
       onHookEvent: (providerId, event) => this.callback?.(providerId, event),
       onSetHooksEnabled: options?.onSetHooksEnabled,
+      onReloadExternalAssets: options?.onReloadExternalAssets,
     });
 
     this.app = app;
@@ -118,8 +139,104 @@ export class PixelAgentsServer {
     return this.config;
   }
 
+  private async connectFleetRelay(config: ServerConfig, runtime: FleetRuntime): Promise<void> {
+    this.stopFleetRelay();
+    this.fleetRelayRuntime = runtime;
+
+    const socket = new WebSocket(`ws://127.0.0.1:${config.port}/fleet-stream`);
+    this.fleetRelay = socket;
+    let resolveReady = (): void => {};
+    const ready = new Promise<void>((resolve) => {
+      resolveReady = resolve;
+    });
+    const timeout = setTimeout(resolveReady, 1_000);
+    timeout.unref();
+
+    socket.addEventListener(
+      'open',
+      () => socket.send(JSON.stringify({ type: 'authenticate', token: config.token })),
+      { once: true },
+    );
+    socket.addEventListener('message', (event) => {
+      if (this.fleetRelay !== socket || typeof event.data !== 'string') return;
+      try {
+        const message = JSON.parse(event.data) as unknown;
+        if (
+          typeof message === 'object' &&
+          message !== null &&
+          'type' in message &&
+          message.type === 'fleetStreamReady'
+        ) {
+          clearTimeout(timeout);
+          resolveReady();
+          return;
+        }
+        const parsed = parseFleetSnapshot(message);
+        if (parsed.ok) runtime.applySnapshot(parsed.value);
+      } catch {
+        // Ignore malformed frames from a stale or incompatible server.
+      }
+    });
+    socket.addEventListener(
+      'error',
+      () => {
+        clearTimeout(timeout);
+        resolveReady();
+      },
+      { once: true },
+    );
+    socket.addEventListener('close', () => {
+      if (this.fleetRelay !== socket) return;
+      this.fleetRelay = null;
+      clearTimeout(timeout);
+      resolveReady();
+      this.scheduleFleetRelayReconnect();
+    });
+
+    await ready;
+  }
+
+  private scheduleFleetRelayReconnect(): void {
+    if (
+      this.fleetRelayReconnectTimer ||
+      !this.config ||
+      this.ownsServer ||
+      !this.fleetRelayRuntime ||
+      !this.startOptions
+    ) {
+      return;
+    }
+    const runtime = this.fleetRelayRuntime;
+    const options = this.startOptions;
+    this.fleetRelayReconnectTimer = setTimeout(() => {
+      this.fleetRelayReconnectTimer = null;
+      const discovered = this.readServerJson();
+      if (discovered && isProcessRunning(discovered.pid)) {
+        this.config = discovered;
+        void this.connectFleetRelay(discovered, runtime);
+        return;
+      }
+      this.config = null;
+      void this.start(options);
+    }, 1_000);
+    this.fleetRelayReconnectTimer.unref();
+  }
+
+  private stopFleetRelay(): void {
+    if (this.fleetRelayReconnectTimer) {
+      clearTimeout(this.fleetRelayReconnectTimer);
+      this.fleetRelayReconnectTimer = null;
+    }
+    const relay = this.fleetRelay;
+    this.fleetRelay = null;
+    this.fleetRelayRuntime = null;
+    relay?.close();
+  }
+
   /** Stop the server and clean up server.json (only if we own it). */
   stop(): void {
+    this.startOptions = undefined;
+    this.stopFleetRelay();
     if (this.app) {
       this.app.close();
       this.app = null;

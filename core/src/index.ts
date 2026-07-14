@@ -10,6 +10,12 @@ export {
   SERVER_JSON_NAME,
   TASK_DESCRIPTION_DISPLAY_MAX_LENGTH,
 } from './constants.js';
+export type {
+  FleetAgentIdentity,
+  FleetAgentProjection,
+  FleetAgentStatus,
+  FleetSnapshot,
+} from './fleet.js';
 export type { ClientMessage, FurnitureAssetMessage, ServerMessage } from './messages.js';
 export type { AgentEvent, HookProvider } from './provider.js';
 export type {

@@ -137,7 +137,7 @@ describe('AgentStateStore', () => {
   });
 
   describe('persistence', () => {
-    it('persist calls adapter.saveAgents with correct shape', () => {
+    it('persist saves transcript agents and excludes fleet projections', () => {
       const adapter = createMockAdapter();
       store.setAdapter(adapter);
       store.set(
@@ -151,6 +151,14 @@ describe('AgentStateStore', () => {
           teamName: 'team-a',
           agentName: undefined,
           isTeamLead: true,
+        }),
+      );
+      store.set(
+        2,
+        createTestAgent({
+          id: 2,
+          isExternal: true,
+          fleetKey: '["omp","host","session","Main"]',
         }),
       );
 

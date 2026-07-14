@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import type { AgentActivityStatus, FleetAgentMeta } from '../../../../core/src/messages.js';
 import { Button } from '../../components/ui/Button.js';
 import {
   CHARACTER_SITTING_OFFSET_PX,
@@ -29,10 +30,141 @@ import { CharacterState, TILE_SIZE } from '../types.js';
 // surfaces this label. Driven by Character.waitingAwaitingInput.
 const WAITING_INPUT_ACTIVITY_TEXT = 'Waiting for input';
 
+interface FleetStatusPresentation {
+  marker: 'dot' | '!' | '•' | 'Ⅱ' | '✓' | '×';
+  color: string;
+  pulse: boolean;
+  panelClassName: string;
+}
+
+const FLEET_STATUS_PRESENTATIONS = {
+  active: {
+    marker: 'dot',
+    color: 'var(--color-status-active)',
+    pulse: true,
+    panelClassName: '',
+  },
+  running: {
+    marker: 'dot',
+    color: 'var(--color-status-active)',
+    pulse: true,
+    panelClassName: '',
+  },
+  waiting: {
+    marker: '!',
+    color: 'var(--color-status-permission)',
+    pulse: false,
+    panelClassName: '',
+  },
+  idle: {
+    marker: '•',
+    color: 'var(--color-status-success)',
+    pulse: false,
+    panelClassName: '',
+  },
+  parked: {
+    marker: 'Ⅱ',
+    color: 'var(--color-text-muted)',
+    pulse: false,
+    panelClassName: 'opacity-75',
+  },
+  completed: {
+    marker: '✓',
+    color: 'var(--color-status-success)',
+    pulse: false,
+    panelClassName: 'opacity-90',
+  },
+  disconnected: {
+    marker: '×',
+    color: 'var(--color-status-error)',
+    pulse: false,
+    panelClassName: 'opacity-60',
+  },
+} satisfies Record<AgentActivityStatus, FleetStatusPresentation>;
+
+function getFleetStatusPresentation(status: AgentActivityStatus): FleetStatusPresentation {
+  return FLEET_STATUS_PRESENTATIONS[status];
+}
+
+function getFleetOverlayText(fleet: FleetAgentMeta, folderName?: string) {
+  const activity = fleet.activity?.trim() || fleet.status;
+  return {
+    provider: fleet.providerId,
+    role: fleet.role?.trim() || 'agent',
+    projectLabel: fleet.projectLabel?.trim() || folderName,
+    activity,
+    showStatusLabel: !!fleet.activity?.trim() && activity.toLowerCase() !== fleet.status,
+  };
+}
+
+export function FleetOverlayContent({
+  fleet,
+  folderName,
+}: {
+  fleet: FleetAgentMeta;
+  folderName?: string;
+}) {
+  const presentation = getFleetStatusPresentation(fleet.status);
+  const text = getFleetOverlayText(fleet, folderName);
+
+  return (
+    <div className={`flex min-w-0 flex-col gap-2 overflow-hidden ${presentation.panelClassName}`}>
+      <span className="flex min-w-0 items-center gap-4 text-xs leading-none">
+        <span className="shrink-0 text-accent-bright">{text.provider}</span>
+        {fleet.inferred && (
+          <span
+            className="shrink-0 text-2xs uppercase text-text-muted"
+            title="Lifecycle state is recovered approximately"
+            aria-label="Inferred telemetry: lifecycle state is recovered approximately"
+          >
+            inferred
+          </span>
+        )}
+        <span className="shrink-0 text-text-muted">·</span>
+        <span className="overflow-hidden text-ellipsis">{text.role}</span>
+      </span>
+      <span className="flex min-w-0 items-center gap-4 leading-none">
+        <span
+          className={`flex w-8 shrink-0 items-center justify-center text-2xs font-bold ${presentation.pulse ? 'pixel-pulse' : ''}`}
+          style={{ color: presentation.color }}
+          aria-hidden="true"
+        >
+          {presentation.marker === 'dot' ? (
+            <span className="block h-6 w-6 rounded-full" style={{ background: presentation.color }} />
+          ) : (
+            presentation.marker
+          )}
+        </span>
+        <span className="min-w-0 overflow-hidden text-ellipsis text-sm" title={text.activity}>
+          {text.activity}
+        </span>
+        {text.showStatusLabel && (
+          <span
+            className="shrink-0 text-2xs uppercase"
+            style={{ color: presentation.color }}
+            aria-label={`Status: ${fleet.status}`}
+          >
+            {fleet.status}
+          </span>
+        )}
+      </span>
+      {text.projectLabel && (
+        <span
+          className="overflow-hidden text-ellipsis text-2xs leading-none text-text-muted"
+          title={text.projectLabel}
+        >
+          {text.projectLabel}
+        </span>
+      )}
+    </div>
+  );
+}
+
 interface ToolOverlayProps {
   officeState: OfficeState;
   agents: number[];
   agentTools: Record<number, ToolActivity[]>;
+  agentDetails: Record<number, FleetAgentMeta>;
   subagentCharacters: SubagentCharacter[];
   containerRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
@@ -84,6 +216,7 @@ export function ToolOverlay({
   officeState,
   agents,
   agentTools,
+  agentDetails,
   subagentCharacters,
   containerRef,
   zoom,
@@ -129,6 +262,7 @@ export function ToolOverlay({
         const isSelected = selectedId === id;
         const isHovered = hoveredId === id;
         const isSub = ch.isSubagent;
+        const fleet = agentDetails[id];
 
         // Only show for hovered or selected agents (unless always-show is on)
         if (!alwaysShowOverlay && !isSelected && !isHovered) return null;
@@ -145,7 +279,7 @@ export function ToolOverlay({
         // so overlay counts stay stable and hover/select can still bring the
         // panel back. When always-show is off, the early return above already
         // keeps the panel hidden for idle agents.
-        const isDone = ch.bubbleType === 'waiting' && !ch.waitingAwaitingInput;
+        const isDone = !fleet && ch.bubbleType === 'waiting' && !ch.waitingAwaitingInput;
         if (isDone && !isSelected && !isHovered) {
           return (
             <div
@@ -161,26 +295,28 @@ export function ToolOverlay({
         // Get activity text
         const hasWaitingBubble = ch.bubbleType === 'waiting';
         const subHasPermission = isSub && ch.bubbleType === 'permission';
-        let activityText: string;
-        if (hasWaitingBubble && ch.waitingAwaitingInput) {
-          // Idle, waiting on the user -> dedicated label. A finished turn (Stop)
-          // shows only the checkmark and falls through to the normal idle text.
-          activityText = WAITING_INPUT_ACTIVITY_TEXT;
-        } else if (isSub) {
-          if (subHasPermission) {
-            activityText = 'Needs approval';
+        let activityText = '';
+        if (!fleet) {
+          if (hasWaitingBubble && ch.waitingAwaitingInput) {
+            // Idle, waiting on the user -> dedicated label. A finished turn (Stop)
+            // shows only the checkmark and falls through to the normal idle text.
+            activityText = WAITING_INPUT_ACTIVITY_TEXT;
+          } else if (isSub) {
+            if (subHasPermission) {
+              activityText = 'Needs approval';
+            } else {
+              const sub = subagentCharacters.find((s) => s.id === id);
+              activityText = sub ? sub.label : 'Subtask';
+            }
           } else {
-            const sub = subagentCharacters.find((s) => s.id === id);
-            activityText = sub ? sub.label : 'Subtask';
+            activityText = getActivityText(
+              id,
+              agentTools,
+              ch.isActive,
+              ch.bubbleType,
+              ch.waitingAwaitingInput ?? false,
+            );
           }
-        } else {
-          activityText = getActivityText(
-            id,
-            agentTools,
-            ch.isActive,
-            ch.bubbleType,
-            ch.waitingAwaitingInput ?? false,
-          );
         }
 
         // Determine dot color
@@ -202,7 +338,9 @@ export function ToolOverlay({
         const teamRoleLabel = ch.isTeamLead ? 'LEAD' : ch.agentName || null;
         const totalTokens = ch.inputTokens + ch.outputTokens;
         const tokenRatio = totalTokens / MAX_CONTEXT_TOKENS;
-        const hasExtraLines = !!(ch.folderName || teamRoleLabel);
+        const hasExtraLines = fleet
+          ? !!(fleet.projectLabel || ch.folderName)
+          : !!(ch.folderName || teamRoleLabel);
 
         return (
           <div
@@ -218,42 +356,51 @@ export function ToolOverlay({
             data-testid="agent-overlay"
             data-agent-id={id}
           >
-            <div className="flex items-center border-border px-8 pt-2 pb-4 gap-5 pixel-panel whitespace-nowrap max-w-2xs">
-              {dotColor && (
-                <span
-                  className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission && !hasWaiting ? 'pixel-pulse' : ''}`}
-                  style={{ background: dotColor }}
-                />
+            <div
+              className="flex max-w-2xs items-center gap-5 whitespace-nowrap border-border px-8 pt-2 pb-4 pixel-panel"
+              data-fleet-status={fleet?.status}
+            >
+              {fleet ? (
+                <FleetOverlayContent fleet={fleet} folderName={ch.folderName} />
+              ) : (
+                <>
+                  {dotColor && (
+                    <span
+                      className={`w-6 h-6 rounded-full shrink-0 ${isActive && !hasPermission && !hasWaiting ? 'pixel-pulse' : ''}`}
+                      style={{ background: dotColor }}
+                    />
+                  )}
+                  <div className="flex flex-col gap-0 overflow-hidden">
+                    {teamRoleLabel && (
+                      <span
+                        className="overflow-hidden text-ellipsis block leading-none"
+                        style={{
+                          fontSize: '18px',
+                          color: ch.isTeamLead ? TEAM_LEAD_COLOR : TEAM_ROLE_COLOR,
+                          fontWeight: ch.isTeamLead ? 'bold' : undefined,
+                        }}
+                      >
+                        {teamRoleLabel}
+                      </span>
+                    )}
+                    <span
+                      className="overflow-hidden text-ellipsis block leading-none"
+                      style={{
+                        fontSize: isSub ? '20px' : '22px',
+                        fontStyle: isSub ? 'italic' : undefined,
+                      }}
+                    >
+                      {activityText}
+                    </span>
+                    {ch.folderName && (
+                      <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
+                        {ch.folderName}
+                      </span>
+                    )}
+                  </div>
+                </>
               )}
-              <div className="flex flex-col gap-0 overflow-hidden">
-                {teamRoleLabel && (
-                  <span
-                    className="overflow-hidden text-ellipsis block leading-none"
-                    style={{
-                      fontSize: '18px',
-                      color: ch.isTeamLead ? TEAM_LEAD_COLOR : TEAM_ROLE_COLOR,
-                      fontWeight: ch.isTeamLead ? 'bold' : undefined,
-                    }}
-                  >
-                    {teamRoleLabel}
-                  </span>
-                )}
-                <span
-                  className="overflow-hidden text-ellipsis block leading-none"
-                  style={{
-                    fontSize: isSub ? '20px' : '22px',
-                    fontStyle: isSub ? 'italic' : undefined,
-                  }}
-                >
-                  {activityText}
-                </span>
-                {ch.folderName && (
-                  <span className="text-2xs leading-none overflow-hidden text-ellipsis block">
-                    {ch.folderName}
-                  </span>
-                )}
-              </div>
-              {isSelected && !isSub && (
+              {isSelected && !isSub && !fleet && (
                 <Button
                   variant="ghost"
                   size="icon"

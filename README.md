@@ -75,10 +75,29 @@ Then press **F5** in VS Code to launch the Extension Development Host.
 To try the **standalone CLI** locally:
 
 ```bash
-node dist/cli.js                 # or npx pixel-agents [--port 3100] after publish
+node dist/cli.js --port 3100     # or npx pixel-agents --port 3100 after publish
 ```
 
 It starts the Fastify server, opens the webview SPA at `http://localhost:3100`, and (in the same `~/.pixel-agents/` namespace) shares your hooks and layout with the VS Code extension if both are running.
+
+### OMP and Codex Fleet Monitoring
+
+This fork accepts authenticated, metadata-only fleet snapshots from Oh My Pi (OMP) and Codex CLI at `POST /api/fleet`.
+The workstation-managed OMP extension and Codex hooks discover the running server through `~/.pixel-agents/server.json`, publish one-second heartbeats, and retry the next snapshot after a transient failure.
+
+Start the standalone dashboard:
+
+```bash
+node dist/cli.js --port 3100
+```
+
+The server immediately recovers already-running OMP sessions from active terminal-session records and recent Codex roots and descendants from the local state database.
+Recovered characters are labeled `INFERRED` because those external stores cannot expose exact in-process waiting, idle, or parked state.
+When an OMP extension or Codex hook heartbeat arrives, authoritative telemetry automatically replaces the matching inferred projection without creating a duplicate character.
+
+Authoritative producers show every main agent and subagent with its provider, role, project, privacy-safe activity label, and exact `running`, `waiting`, `idle`, `parked`, `completed`, or `disconnected` state.
+Parent-child relationships and active fleet state are restored when the browser reconnects.
+Prompts, responses, tool arguments, and tool output are rejected from the fleet protocol and are never projected into the browser.
 
 ### Browser Preview & Hosted Reports
 

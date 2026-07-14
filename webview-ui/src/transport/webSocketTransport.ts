@@ -27,9 +27,11 @@ export class WebSocketTransport implements MessageTransport {
     this.ws.onopen = () => {
       this.reconnectAttempts = 0;
       console.log('[Transport] WebSocket connected');
-      // Flush any messages queued while connecting
+      // Every socket needs a fresh state handshake. Drop any queued copy so
+      // initial mount and reconnect both send exactly one before other messages.
+      this.ws!.send(JSON.stringify({ type: 'webviewReady' }));
       for (const msg of this.pendingMessages) {
-        this.ws!.send(JSON.stringify(msg));
+        if (msg.type !== 'webviewReady') this.ws!.send(JSON.stringify(msg));
       }
       this.pendingMessages = [];
     };

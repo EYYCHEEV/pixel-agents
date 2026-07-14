@@ -311,7 +311,7 @@ export function OfficeCanvas({
       if (!pos) return null;
       const col = Math.floor(pos.worldX / TILE_SIZE);
       const row = Math.floor(pos.worldY / TILE_SIZE);
-      const layout = officeState.getLayout();
+      const layout = isEditMode ? officeState.getLayout() : officeState.getLayout();
       // In edit mode with floor/wall/erase tool, extend valid range by 1 for ghost border
       if (
         isEditMode &&

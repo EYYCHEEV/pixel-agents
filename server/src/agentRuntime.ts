@@ -192,6 +192,7 @@ export class AgentRuntime {
 
   /** Register an agent with the hook event handler for session->agent mapping. */
   registerAgent(sessionId: string, agentId: number): void {
+    if (this.store.get(agentId)?.fleetKey) return;
     this.hookEventHandler.registerAgent(sessionId, agentId);
   }
 

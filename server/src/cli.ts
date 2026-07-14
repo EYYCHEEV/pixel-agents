@@ -8,6 +8,9 @@
  * Each connecting WebSocket client receives the full state on webviewReady.
  */
 
+import { createHash } from 'node:crypto';
+import { hostname } from 'node:os';
+
 import * as path from 'path';
 
 import { AgentRuntime } from './agentRuntime.js';
@@ -15,14 +18,24 @@ import { AgentStateStore } from './agentStateStore.js';
 import {
   loadCharacterSprites,
   loadDefaultLayout,
+  loadExternalCharacterSprites,
+  loadExternalPetSprites,
   loadFloorTiles,
   loadFurnitureAssets,
   loadPetSprites,
   loadWallTiles,
+  mergeCharacterSprites,
+  mergeLoadedAssets,
+  mergePetSprites,
 } from './assetLoader.js';
 import type { AssetCache } from './clientMessageHandler.js';
+import { readConfig } from './configPersistence.js';
 import { FileStateAdapter } from './fileStateAdapter.js';
+import { FleetRuntime } from './fleetRuntime.js';
 import { claudeProvider, copyHookScript } from './providers/index.js';
+import { scanCodexRecovery } from './recovery/codexRecovery.js';
+import { scanOmpRecovery } from './recovery/ompRecovery.js';
+import { SessionRecoveryMonitor } from './recovery/sessionRecovery.js';
 import { PixelAgentsServer } from './server.js';
 
 // ── Argument parsing ──────────────────────────────────────────
@@ -54,6 +67,33 @@ Options:
   return args;
 }
 
+type ReloadableAssetCache = Pick<AssetCache, 'characters' | 'pets' | 'furniture'>;
+
+async function loadReloadableAssets(distRoot: string): Promise<ReloadableAssetCache> {
+  let [characters, pets, furniture] = await Promise.all([
+    loadCharacterSprites(distRoot),
+    loadPetSprites(distRoot),
+    loadFurnitureAssets(distRoot),
+  ]);
+  for (const extraDir of readConfig().externalAssetDirectories) {
+    const [extraCharacters, extraPets, extraFurniture] = await Promise.all([
+      loadExternalCharacterSprites(extraDir),
+      loadExternalPetSprites(extraDir),
+      loadFurnitureAssets(extraDir),
+    ]);
+    if (extraCharacters) {
+      characters = characters
+        ? mergeCharacterSprites(characters, extraCharacters)
+        : extraCharacters;
+    }
+    if (extraPets) pets = pets ? mergePetSprites(pets, extraPets) : extraPets;
+    if (extraFurniture) {
+      furniture = furniture ? mergeLoadedAssets(furniture, extraFurniture) : extraFurniture;
+    }
+  }
+  return { characters, pets, furniture };
+}
+
 // ── Main ──────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -65,12 +105,11 @@ async function main(): Promise<void> {
 
   // ── Load assets on startup (same pipeline as VS Code extension) ──
   console.log('[Pixel Agents] Loading assets...');
+  const reloadableAssets = await loadReloadableAssets(distRoot);
   const assetCache: AssetCache = {
-    characters: await loadCharacterSprites(distRoot),
-    pets: await loadPetSprites(distRoot),
-    floorTiles: await loadFloorTiles(distRoot).then((t) => t?.sprites ?? null),
-    wallTiles: await loadWallTiles(distRoot).then((t) => t?.sets ?? null),
-    furniture: await loadFurnitureAssets(distRoot),
+    ...reloadableAssets,
+    floorTiles: await loadFloorTiles(distRoot).then((tiles) => tiles?.sprites ?? null),
+    wallTiles: await loadWallTiles(distRoot).then((tiles) => tiles?.sets ?? null),
     defaultLayout: loadDefaultLayout(distRoot),
   };
   const charCount = assetCache.characters?.characters.length ?? 0;
@@ -91,6 +130,8 @@ async function main(): Promise<void> {
   try {
     // Create runtime first (before server.start, so we can pass it in)
     const runtime = new AgentRuntime(store, claudeProvider);
+    const fleetRuntime = new FleetRuntime(store);
+    fleetRuntime.start();
 
     // Wire hook events: HTTP POST -> runtime -> hookEventHandler -> agents
     server.onHookEvent((providerId, event) => {
@@ -114,18 +155,48 @@ async function main(): Promise<void> {
         console.log('[Pixel Agents] Hooks uninstalled (user toggle)');
       }
     };
+    const onReloadExternalAssets = async (): Promise<void> => {
+      Object.assign(assetCache, await loadReloadableAssets(distRoot));
+    };
+
+    // Reserve persisted IDs before fleet snapshots can allocate from the shared store.
+    runtime.restoreExternalAgents();
 
     const config = await server.start({
       store,
       runtime,
+      fleetRuntime,
       embedded: false,
       host: args.host,
       port: args.port,
       staticDir,
       assetCache,
       onSetHooksEnabled,
+      onReloadExternalAssets,
     });
     currentConfig = { port: config.port, token: config.token };
+    const recoveryMonitor = new SessionRecoveryMonitor({
+      hostId: `host-${createHash('sha256').update(hostname()).digest('hex').slice(0, 16)}`,
+      scanners: [scanOmpRecovery, scanCodexRecovery],
+      publish: async (snapshot) => {
+        const owner = server.getConfig();
+        if (!owner) return;
+        try {
+          await fetch(`http://127.0.0.1:${owner.port}/api/fleet`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${owner.token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(snapshot),
+            signal: AbortSignal.timeout(750),
+          });
+        } catch {
+          // A later recovery tick retries after owner failover or dashboard restart.
+        }
+      },
+    });
+    recoveryMonitor.start();
 
     // Sync runtime refs with persisted settings BEFORE first scan tick
     runtime.hooksEnabled.current = adapter.getSetting('pixel-agents.hooksEnabled', true);
@@ -158,7 +229,9 @@ async function main(): Promise<void> {
     // ── Graceful shutdown ──
     function shutdown(): void {
       console.log('\nShutting down...');
+      recoveryMonitor.stop();
       runtime.dispose();
+      fleetRuntime.dispose();
       server.stop();
       process.exit(0);
     }

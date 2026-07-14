@@ -213,6 +213,7 @@ export class OfficeState {
     return this.layout;
   }
 
+
   /** Get the blocked-tile key for a character's own seat, or null */
   private ownSeatKey(ch: Character): string | null {
     if (!ch.seatId) return null;
@@ -324,7 +325,9 @@ export class OfficeState {
     skipSpawnEffect?: boolean,
     folderName?: string,
   ): void {
-    if (this.characters.has(id)) return;
+    const existing = this.characters.get(id);
+    if (existing && existing.matrixEffect !== 'despawn') return;
+    if (existing) this.characters.delete(id);
 
     let palette: number;
     let hueShift: number;

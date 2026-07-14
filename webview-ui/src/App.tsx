@@ -66,6 +66,7 @@ function App() {
     selectedAgent,
     agentTools,
     agentStatuses,
+    agentDetails,
     subagentTools,
     subagentCharacters,
     layoutReady,
@@ -255,6 +256,7 @@ function App() {
             officeState={officeState}
             agents={agents}
             agentTools={agentTools}
+            agentDetails={agentDetails}
             subagentCharacters={subagentCharacters}
             containerRef={containerRef}
             zoom={editor.zoom}

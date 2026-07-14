@@ -152,6 +152,7 @@ export class AgentStateStore {
     }
     const persisted: PersistedAgent[] = [];
     for (const agent of this.agents.values()) {
+      if (agent.fleetKey) continue;
       persisted.push({
         id: agent.id,
         sessionId: agent.sessionId,

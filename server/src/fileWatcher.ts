@@ -120,7 +120,7 @@ export function startFileWatching(
       agent.fileOffset === prevOffset &&
       agent.terminalRef &&
       !agent.isExternal &&
-      ![...agents.values()].some((a) => a.isExternal) &&
+      ![...agents.values()].some((a) => a.isExternal && !a.fleetKey) &&
       agent.linesProcessed > 0 &&
       clearDetectionDeps.activeAgentIdRef.current === agentId &&
       Date.now() - agent.lastDataAt > CLEAR_IDLE_THRESHOLD_MS
@@ -1271,7 +1271,7 @@ export function startStaleExternalAgentCheck(
     const toRemove: number[] = [];
 
     for (const [id, agent] of agents) {
-      if (!agent.isExternal) continue;
+      if (!agent.isExternal || agent.fleetKey) continue;
 
       // Only despawn if the JSONL file has been deleted from disk.
       // Inactive external agents stay alive so they can resume when

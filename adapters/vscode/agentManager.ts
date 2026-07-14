@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import type { StateAdapter } from '../../core/src/adapter.js';
+import type { FleetAgentMeta } from '../../core/src/messages.js';
 import { AgentStateStore } from '../../server/src/agentStateStore.js';
 import { JSONL_POLL_INTERVAL_MS } from '../../server/src/constants.js';
 import {
@@ -12,6 +13,7 @@ import {
   reassignAgentToFile,
   startFileWatching,
 } from '../../server/src/fileWatcher.js';
+import { fleetMetaFromAgent } from '../../server/src/fleetRuntime.js';
 import { loadLayout } from '../../server/src/layoutPersistence.js';
 import { CLAUDE_TERMINAL_NAME_PREFIX } from '../../server/src/providers/hook/claude/constants.js';
 import { claudeProvider } from '../../server/src/providers/index.js';
@@ -504,6 +506,7 @@ export function sendExistingAgents(
   // Include folderName and isExternal per agent
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
+  const agentDetails: Record<number, FleetAgentMeta> = {};
   for (const [id, agent] of agents) {
     if (agent.folderName) {
       folderNames[id] = agent.folderName;
@@ -511,6 +514,8 @@ export function sendExistingAgents(
     if (agent.isExternal) {
       externalAgents[id] = true;
     }
+    const fleet = fleetMetaFromAgent(agent);
+    if (fleet) agentDetails[id] = fleet;
   }
   console.log(
     `[Pixel Agents] sendExistingAgents: agents=${JSON.stringify(agentIds)}, meta=${JSON.stringify(agentMeta)}`,
@@ -522,6 +527,7 @@ export function sendExistingAgents(
     agentMeta,
     folderNames,
     externalAgents,
+    agentDetails,
   });
   // Note: sendCurrentAgentStatuses is called separately AFTER layoutLoaded
   // so that agentStatus/agentToolStart messages arrive after characters are created.
@@ -545,6 +551,15 @@ export function sendCurrentAgentStatuses(
       });
     }
     // Re-send waiting status
+    if (agent.fleetStatus) {
+      webview.postMessage({
+        type: 'agentStatus',
+        id: agentId,
+        status: agent.fleetStatus,
+        activity: agent.fleetActivity,
+      });
+      continue;
+    }
     if (agent.isWaiting) {
       webview.postMessage({
         type: 'agentStatus',

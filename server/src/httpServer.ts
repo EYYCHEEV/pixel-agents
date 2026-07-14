@@ -7,9 +7,15 @@ import Fastify from 'fastify';
 
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
-import type { AssetCache, SetHooksEnabledSideEffect } from './clientMessageHandler.js';
+import type {
+  AssetCache,
+  ReloadExternalAssetsSideEffect,
+  SetHooksEnabledSideEffect,
+} from './clientMessageHandler.js';
 import { handleClientMessage } from './clientMessageHandler.js';
-import { HOOK_API_PREFIX, MAX_HOOK_BODY_SIZE } from './constants.js';
+import { FLEET_MAX_BODY_SIZE, HOOK_API_PREFIX, MAX_HOOK_BODY_SIZE } from './constants.js';
+import type { FleetRuntime } from './fleetRuntime.js';
+import { fleetMetaFromAgent, parseFleetSnapshot } from './fleetRuntime.js';
 import type { AgentState } from './types.js';
 
 /** Options for creating the HTTP + WebSocket server. */
@@ -26,6 +32,8 @@ export interface HttpServerOptions {
   store: AgentStateStore;
   /** Shared agent lifecycle core (for toggle side effects + standalone restore). Optional in embedded mode. */
   runtime?: AgentRuntime;
+  /** Machine-wide fleet projection owner. */
+  fleetRuntime?: FleetRuntime;
   /** Path to SPA dist directory for static serving (standalone only) */
   staticDir?: string;
   /** Cached assets loaded at startup (standalone only) */
@@ -34,6 +42,8 @@ export interface HttpServerOptions {
   onHookEvent?: (providerId: string, event: Record<string, unknown>) => void;
   /** Invoked when setHooksEnabled is toggled via WebSocket. Standalone installs/uninstalls hooks here. */
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
+  /** Reloads standalone assets after configured external directories change. */
+  onReloadExternalAssets?: ReloadExternalAssetsSideEffect;
 }
 
 /** Result of createHttpServer(). */
@@ -75,6 +85,8 @@ export async function createHttpServer(options: HttpServerOptions): Promise<Http
 
   registerHealthRoute(app);
   registerHookRoute(app, options);
+  registerFleetRoute(app, options);
+  registerFleetStreamRoute(app, options);
   registerWebSocketRoute(app, options);
 
   // ── Listen ──────────────────────────────────────────────────
@@ -129,6 +141,57 @@ function registerHookRoute(app: FastifyInstance, options: HttpServerOptions): vo
   );
 }
 
+// ── Fleet Projections ────────────────────────────────────────
+
+function registerFleetRoute(app: FastifyInstance, options: HttpServerOptions): void {
+  app.post(
+    '/api/fleet',
+    { bodyLimit: FLEET_MAX_BODY_SIZE, preHandler: bearerAuth(options.token) },
+    async (request, reply) => {
+    if (!options.fleetRuntime) {
+      reply.code(503).send({ error: 'fleet runtime unavailable' });
+      return;
+    }
+    const parsed = parseFleetSnapshot(request.body);
+    if (!parsed.ok) {
+      reply.code(400).send({ error: parsed.error });
+      return;
+    }
+    reply.send(options.fleetRuntime.applySnapshot(parsed.value));
+    },
+  );
+}
+
+function registerFleetStreamRoute(app: FastifyInstance, options: HttpServerOptions): void {
+  app.get('/fleet-stream', { websocket: true }, (socket) => {
+    let unsubscribe: (() => void) | undefined;
+
+    socket.on('message', (data: Buffer | string) => {
+      if (unsubscribe) return;
+      try {
+        const message = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (
+          message.type !== 'authenticate' ||
+          typeof message.token !== 'string' ||
+          !secureTextEqual(message.token, options.token) ||
+          !options.fleetRuntime
+        ) {
+          socket.close(4001, 'unauthorized');
+          return;
+        }
+        unsubscribe = options.fleetRuntime.subscribeSnapshots((snapshot) =>
+          safeSend(socket, snapshot),
+        );
+        safeSend(socket, { type: 'fleetStreamReady' });
+      } catch {
+        socket.close(4001, 'unauthorized');
+      }
+    });
+
+    socket.on('close', () => unsubscribe?.());
+  });
+}
+
 // ── WebSocket ──────────────────────────────────────────────────
 
 function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions): void {
@@ -161,6 +224,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
         parentAgentId: agent.leadAgentId,
         teamName: agent.teamName,
         hooksOnly: agent.hooksOnly || undefined,
+        fleet: fleetMetaFromAgent(agent),
       });
     };
 
@@ -188,6 +252,7 @@ function registerWebSocketRoute(app: FastifyInstance, options: HttpServerOptions
           runtime: options.runtime,
           cache: options.assetCache ?? null,
           onSetHooksEnabled: options.onSetHooksEnabled,
+          onReloadExternalAssets: options.onReloadExternalAssets,
         });
       } catch {
         // Malformed JSON, ignore
@@ -208,9 +273,7 @@ function bearerAuth(expectedToken: string) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
     const auth = request.headers.authorization ?? '';
     const expected = `Bearer ${expectedToken}`;
-    const authBuf = Buffer.from(auth);
-    const expectedBuf = Buffer.from(expected);
-    if (authBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(authBuf, expectedBuf)) {
+    if (!secureTextEqual(auth, expected)) {
       reply.code(401).send('unauthorized');
     }
   };
@@ -218,12 +281,24 @@ function bearerAuth(expectedToken: string) {
 
 // ── Utilities ──────────────────────────────────────────────────
 
+function secureTextEqual(actual: string, expected: string): boolean {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+  return (
+    actualBuffer.length === expectedBuffer.length &&
+    crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+  );
+}
+
 function safeSend(
   socket: { send: (data: string) => void; readyState: number },
-  message: Record<string, unknown>,
+  message: unknown,
 ): void {
   // WebSocket.OPEN = 1
-  if (socket.readyState === 1) {
+  if (socket.readyState !== 1) return;
+  try {
     socket.send(JSON.stringify(message));
+  } catch {
+    // A close can race the readyState check.
   }
 }

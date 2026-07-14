@@ -81,6 +81,7 @@ components:
         - $ref: '#/components/schemas/ProviderCapabilities'
         # Agent lifecycle
         - $ref: '#/components/schemas/AgentCreated'
+        - $ref: '#/components/schemas/AgentFleetUpdated'
         - $ref: '#/components/schemas/AgentClosed'
         - $ref: '#/components/schemas/AgentSelected'
         - $ref: '#/components/schemas/ExistingAgents'
@@ -175,6 +176,21 @@ components:
           type: string
         isExternal:
           type: boolean
+        fleet:
+          $ref: '#/components/schemas/FleetAgentMeta'
+
+    AgentFleetUpdated:
+      description: Provider metadata changed after agent creation, such as late parent resolution.
+      type: object
+      additionalProperties: false
+      required: [type, id, fleet]
+      properties:
+        type:
+          const: agentFleetUpdated
+        id:
+          type: integer
+        fleet:
+          $ref: '#/components/schemas/FleetAgentMeta'
 
     AgentClosed:
       description: An agent has been removed from the office.
@@ -204,7 +220,7 @@ components:
         changes that the client missed. Includes seat/palette assignments.
       type: object
       additionalProperties: false
-      required: [type, agents, agentMeta, folderNames, externalAgents]
+      required: [type, agents, agentMeta, folderNames, externalAgents, agentDetails]
       properties:
         type:
           const: existingAgents
@@ -227,9 +243,14 @@ components:
           description: Map of agent ID (string) to external flag.
           additionalProperties:
             type: boolean
+        agentDetails:
+          type: object
+          description: Map of agent ID (string) to provider-aware fleet metadata.
+          additionalProperties:
+            $ref: '#/components/schemas/FleetAgentMeta'
 
     AgentStatus:
-      description: Active vs waiting state for an agent (drives character animation).
+      description: Durable lifecycle state for an agent.
       type: object
       additionalProperties: false
       required: [type, id, status]
@@ -246,11 +267,14 @@ components:
             Only meaningful when status is "waiting". True when the agent went
             idle waiting on the user (drives the "Waiting for input" label);
             absent/false means the agent finished its turn ("Done").
+        activity:
+          type: string
+          description: Metadata-only activity label supplied by a fleet producer.
 
     AgentActivityStatus:
-      description: Activity state of an agent.
+      description: Durable lifecycle state of an agent.
       type: string
-      enum: [active, waiting]
+      enum: [active, running, waiting, idle, parked, completed, disconnected]
 
     AgentToolStart:
       description: Agent began executing a tool.
@@ -844,6 +868,39 @@ components:
           const: requestDiagnostics
 
     # ── Supporting schemas ─────────────────────────────────────────
+
+    FleetAgentMeta:
+      description: Provider-aware identity and current projection for a fleet agent.
+      type: object
+      additionalProperties: false
+      required: [providerId, hostId, sessionId, agentId, status]
+      properties:
+        providerId:
+          type: string
+        hostId:
+          type: string
+        sessionId:
+          type: string
+        agentId:
+          type: string
+        parentAgentId:
+          type: integer
+        isChild:
+          description: True when the fleet projection declares a parent, even if that parent has not resolved to a local numeric ID yet.
+          type: boolean
+        role:
+          type: string
+        model:
+          type: string
+        projectLabel:
+          type: string
+        activity:
+          type: string
+        inferred:
+          description: True when lifecycle state was recovered approximately rather than observed by the owning process.
+          type: boolean
+        status:
+          $ref: '#/components/schemas/AgentActivityStatus'
 
     AgentSeatMeta:
       description: |

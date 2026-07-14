@@ -1,14 +1,19 @@
+import type { FleetAgentMeta } from '../../core/src/messages.js';
 import type { AgentRuntime } from './agentRuntime.js';
 import type { AgentStateStore } from './agentStateStore.js';
 import type { LoadedAssets, LoadedCharacterSprites, LoadedPetSprites } from './assetLoader.js';
 import { readConfig, writeConfig } from './configPersistence.js';
+import { fleetMetaFromAgent } from './fleetRuntime.js';
 import { readLayoutFromFile, writeLayoutToFile } from './layoutPersistence.js';
 import { claudeProvider } from './providers/index.js';
+import type { StandaloneHostActions } from './standaloneHostActions.js';
+import { standaloneHostActions } from './standaloneHostActions.js';
 
 type WsSend = (message: Record<string, unknown>) => void;
 
 /** Async hook toggle side effect (install/uninstall + script copy). Provided by cli.ts. */
 export type SetHooksEnabledSideEffect = (enabled: boolean) => Promise<void> | void;
+export type ReloadExternalAssetsSideEffect = () => Promise<void>;
 
 /** Cached assets loaded at server startup. Sent to each WebSocket client on webviewReady. */
 export interface AssetCache {
@@ -26,6 +31,10 @@ export interface ClientMessageContext {
   cache: AssetCache | null;
   /** Install/uninstall hooks side effect. Needs server url+token known only to cli.ts. */
   onSetHooksEnabled?: SetHooksEnabledSideEffect;
+  /** Reload the mutable standalone asset cache after directory changes. */
+  onReloadExternalAssets?: ReloadExternalAssetsSideEffect;
+  /** Native standalone actions for Finder and file/directory dialogs. */
+  hostActions?: StandaloneHostActions;
 }
 
 // ── Setting key constants (mirror adapters/vscode/constants.ts) ──
@@ -50,6 +59,7 @@ export function handleClientMessage(
 ): void {
   const { store, runtime } = ctx;
   const adapter = store.getAdapter();
+  const hostActions = ctx.hostActions ?? standaloneHostActions;
 
   switch (msg.type) {
     case 'webviewReady':
@@ -101,15 +111,59 @@ export function handleClientMessage(
       adapter?.setSetting(KEY_HOOKS_INFO_SHOWN, true);
       break;
 
+    case 'openSessionsFolder':
+      void hostActions
+        .openSessionsFolder()
+        .catch((error) => reportHostActionError('open sessions folder', error));
+      break;
+
+    case 'exportLayout': {
+      const layout = readLayoutFromFile() ?? ctx.cache?.defaultLayout;
+      if (!layout) {
+        console.warn('[Pixel Agents] No layout is available to export');
+        break;
+      }
+      void hostActions
+        .exportLayout(layout)
+        .catch((error) => reportHostActionError('export layout', error));
+      break;
+    }
+
+    case 'importLayout':
+      void hostActions
+        .importLayout()
+        .then((layout) => {
+          if (!layout) return;
+          if (!isImportableLayout(layout)) {
+            console.error('[Pixel Agents] Failed to import layout: Invalid layout file');
+            return;
+          }
+          writeLayoutToFile(layout);
+          send({ type: 'layoutLoaded', layout });
+        })
+        .catch((error) => reportHostActionError('import layout', error));
+      break;
+
     case 'addExternalAssetDirectory': {
       const newPath = msg.path as string | undefined;
-      if (!newPath) break;
+      if (!newPath) {
+        void hostActions
+          .chooseExternalAssetDirectory()
+          .then((selectedPath) => {
+            if (selectedPath) {
+              handleClientMessage({ type: 'addExternalAssetDirectory', path: selectedPath }, send, ctx);
+            }
+          })
+          .catch((error) => reportHostActionError('add external asset directory', error));
+        break;
+      }
       const cfg = readConfig();
       if (!cfg.externalAssetDirectories.includes(newPath)) {
         cfg.externalAssetDirectories.push(newPath);
         writeConfig(cfg);
       }
       send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void reloadExternalAssets(send, ctx);
       break;
     }
 
@@ -120,13 +174,68 @@ export function handleClientMessage(
       cfg.externalAssetDirectories = cfg.externalAssetDirectories.filter((d) => d !== removePath);
       writeConfig(cfg);
       send({ type: 'externalAssetDirectoriesUpdated', dirs: cfg.externalAssetDirectories });
+      void reloadExternalAssets(send, ctx);
       break;
     }
 
     default:
-      // focusAgent, exportLayout, importLayout
-      // require IDE-specific handling (not yet implemented for standalone)
+      // focusAgent requires IDE-specific handling.
       break;
+  }
+}
+
+function reportHostActionError(action: string, error: unknown): void {
+  console.error(`[Pixel Agents] Failed to ${action}:`, error);
+}
+
+function isImportableLayout(layout: Record<string, unknown>): boolean {
+  const { cols, rows, tiles, furniture, tileColors, pets } = layout;
+  if (
+    layout.version !== 1 ||
+    !Number.isInteger(cols) ||
+    !Number.isInteger(rows) ||
+    (cols as number) <= 0 ||
+    (rows as number) <= 0 ||
+    !Array.isArray(tiles) ||
+    tiles.length !== (cols as number) * (rows as number) ||
+    !tiles.every(Number.isInteger) ||
+    !Array.isArray(furniture)
+  ) {
+    return false;
+  }
+  if (tileColors !== undefined && (!Array.isArray(tileColors) || tileColors.length !== tiles.length)) {
+    return false;
+  }
+  return pets === undefined || Array.isArray(pets);
+}
+
+async function reloadExternalAssets(send: WsSend, ctx: ClientMessageContext): Promise<void> {
+  if (!ctx.onReloadExternalAssets) return;
+  try {
+    await ctx.onReloadExternalAssets();
+    sendReloadableAssets(send, ctx.cache);
+  } catch (error) {
+    reportHostActionError('reload external assets', error);
+  }
+}
+
+function sendReloadableAssets(send: WsSend, cache: AssetCache | null): void {
+  if (cache?.characters) {
+    send({ type: 'characterSpritesLoaded', characters: cache.characters.characters });
+  }
+  if (cache?.pets) {
+    send({
+      type: 'petSpritesLoaded',
+      pets: cache.pets.pets,
+      petNames: cache.pets.manifests.map((manifest) => manifest.name),
+    });
+  }
+  if (cache?.furniture) {
+    send({
+      type: 'furnitureAssetsLoaded',
+      catalog: cache.furniture.catalog,
+      sprites: Object.fromEntries(cache.furniture.sprites),
+    });
   }
 }
 
@@ -168,11 +277,9 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     }
   }
 
-  // 3. Layout (saved file, or bundled default)
   const savedLayout = readLayoutFromFile();
-  send({ type: 'layoutLoaded', layout: savedLayout ?? cache?.defaultLayout ?? null });
 
-  // 4. Settings (from adapter, with sensible defaults when adapter is absent)
+  // 3. Settings (from adapter, with sensible defaults when adapter is absent)
   const cfg = readConfig();
   const watchAllSessions = adapter?.getSetting(KEY_WATCH_ALL_SESSIONS, false) ?? false;
   const hooksEnabled = adapter?.getSetting(KEY_HOOKS_ENABLED, true) ?? true;
@@ -195,13 +302,14 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     runtime.hooksEnabled.current = hooksEnabled;
   }
 
-  // 5. Restore persisted external agents (standalone only; VS Code handles its own restore)
+  // 4. Restore persisted external agents (standalone only; VS Code handles its own restore)
   runtime?.restoreExternalAgents();
 
-  // 6. Existing agents (either just restored, or from VS Code adapter if present)
+  // 5. Existing agents must precede layoutLoaded so the webview can buffer and instantiate them.
   const agentIds: number[] = [];
   const folderNames: Record<number, string> = {};
   const externalAgents: Record<number, boolean> = {};
+  const agentDetails: Record<number, FleetAgentMeta> = {};
   for (const [id, agent] of store) {
     agentIds.push(id);
     if (agent.folderName) {
@@ -210,6 +318,8 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     if (agent.isExternal) {
       externalAgents[id] = true;
     }
+    const fleet = fleetMetaFromAgent(agent);
+    if (fleet) agentDetails[id] = fleet;
   }
   const seats = adapter?.loadSeats() ?? {};
   send({
@@ -218,5 +328,18 @@ function handleWebviewReady(send: WsSend, ctx: ClientMessageContext): void {
     agentMeta: seats,
     folderNames,
     externalAgents,
+    agentDetails,
   });
+
+  // 6. Layout readiness drains the webview's buffered existing agents.
+  send({ type: 'layoutLoaded', layout: savedLayout ?? cache?.defaultLayout ?? null });
+  for (const [id, agent] of store) {
+    if (!agent.fleetKey || !agent.fleetStatus) continue;
+    send({
+      type: 'agentStatus',
+      id,
+      status: agent.fleetStatus,
+      activity: agent.fleetActivity,
+    });
+  }
 }

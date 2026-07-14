@@ -54,6 +54,14 @@ export const HOOK_EVENT_BUFFER_MS = 5_000;
 export const SESSION_END_GRACE_MS = 2000;
 export const MAX_HOOK_BODY_SIZE = 65_536; // 64KB
 
+// ── Fleet Projection Ingestion ─────────────────────────────
+export const FLEET_SWEEP_INTERVAL_MS = 500;
+export const FLEET_MIN_LEASE_TTL_MS = 1_000;
+export const FLEET_MAX_LEASE_TTL_MS = 30_000;
+export const FLEET_MAX_AGENTS_PER_SNAPSHOT = 512;
+export const FLEET_MAX_BODY_SIZE = 1_048_576; // 1 MiB
+export const FLEET_MAX_LABEL_LENGTH = 160;
+
 // ── Layout/Config Persistence ──────────────────────────────
 export const LAYOUT_FILE_DIR = '.pixel-agents';
 export const LAYOUT_FILE_NAME = 'layout.json';

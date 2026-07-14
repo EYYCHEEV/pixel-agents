@@ -1,12 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 
+import type { AgentActivityStatus, FleetAgentMeta } from '../../../core/src/messages.js';
 import { playDoneSound, playPermissionSound, setSoundEnabled } from '../notificationSound.js';
 import type { OfficeState } from '../office/engine/officeState.js';
+import {
+  fleetCharacterAppearance,
+  isFleetChild,
+  shouldMaterializeFleetAgent,
+} from '../office/fleetPresentation.js';
 import { setFloorSprites } from '../office/floorTiles.js';
 import { buildDynamicCatalog } from '../office/layout/furnitureCatalog.js';
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js';
 import { setPetTemplates } from '../office/sprites/petSpriteData.js';
-import { setCharacterTemplates } from '../office/sprites/spriteData.js';
+import { getLoadedCharacterCount, setCharacterTemplates } from '../office/sprites/spriteData.js';
 import {
   extractToolName,
   isSubagentToolName,
@@ -57,6 +63,7 @@ interface ExtensionMessageState {
   selectedAgent: number | null;
   agentTools: Record<number, ToolActivity[]>;
   agentStatuses: Record<number, string>;
+  agentDetails: Record<number, FleetAgentMeta>;
   subagentTools: Record<number, Record<string, ToolActivity[]>>;
   subagentCharacters: SubagentCharacter[];
   layoutReady: boolean;
@@ -92,6 +99,8 @@ export function useExtensionMessages(
   const [selectedAgent, setSelectedAgent] = useState<number | null>(null);
   const [agentTools, setAgentTools] = useState<Record<number, ToolActivity[]>>({});
   const [agentStatuses, setAgentStatuses] = useState<Record<number, string>>({});
+  const [agentDetails, setAgentDetails] = useState<Record<number, FleetAgentMeta>>({});
+  const agentDetailsRef = useRef<Record<number, FleetAgentMeta>>({});
   const [subagentTools, setSubagentTools] = useState<
     Record<number, Record<string, ToolActivity[]>>
   >({});
@@ -114,14 +123,81 @@ export function useExtensionMessages(
   const layoutReadyRef = useRef(false);
 
   useEffect(() => {
-    // Buffer agents from existingAgents until layout is loaded
-    let pendingAgents: Array<{
-      id: number;
-      palette?: number;
-      hueShift?: number;
-      seatId?: string;
-      folderName?: string;
-    }> = [];
+    // Buffer agent identities until the authored layout is loaded.
+    let pendingAgents: number[] = [];
+    const presentationById = new Map<
+      number,
+      {
+        palette?: number;
+        hueShift?: number;
+        seatId?: string;
+        folderName?: string;
+      }
+    >();
+
+    const replaceAgentDetail = (id: number, fleet: FleetAgentMeta): void => {
+      const next = { ...agentDetailsRef.current, [id]: fleet };
+      agentDetailsRef.current = next;
+      setAgentDetails(next);
+    };
+
+    const replaceAgentDetails = (details: Record<number, FleetAgentMeta>): void => {
+      const next = { ...details };
+      agentDetailsRef.current = next;
+      setAgentDetails(next);
+    };
+
+    const removeAgentDetail = (id: number): void => {
+      if (!(id in agentDetailsRef.current)) return;
+      const next = { ...agentDetailsRef.current };
+      delete next[id];
+      agentDetailsRef.current = next;
+      setAgentDetails(next);
+    };
+
+    const setAgentListed = (id: number, listed: boolean): void => {
+      setAgents((prev) => {
+        if (listed) return prev.includes(id) ? prev : [...prev, id].sort((a, b) => a - b);
+        return prev.includes(id) ? prev.filter((agentId) => agentId !== id) : prev;
+      });
+      if (!listed) {
+        setSelectedAgent((prev) => (prev === id ? null : prev));
+      }
+    };
+
+    const syncFleetCharacter = (
+      os: OfficeState,
+      id: number,
+      fleet: FleetAgentMeta,
+      skipSpawnEffect = false,
+    ): void => {
+      const shouldMaterialize = shouldMaterializeFleetAgent(fleet);
+      setAgentListed(id, shouldMaterialize);
+      if (!layoutReadyRef.current) return;
+
+      if (!shouldMaterialize) {
+        os.removeAgent(id);
+        return;
+      }
+
+      const presentation = presentationById.get(id);
+      const appearance = fleetCharacterAppearance(fleet, getLoadedCharacterCount());
+      const palette = appearance.palette;
+      const hueShift = appearance.hueShift;
+      os.addAgent(
+        id,
+        palette,
+        hueShift,
+        presentation?.seatId,
+        skipSpawnEffect,
+        presentation?.folderName ?? fleet.projectLabel,
+      );
+      const character = os.characters.get(id);
+      if (character) {
+        character.leadAgentId = fleet.parentAgentId;
+      }
+      os.setAgentActive(id, fleet.status === 'running');
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handler = (msg: any) => {
@@ -156,26 +232,41 @@ export function useExtensionMessages(
       }
 
       if (msg.type === 'layoutLoaded') {
-        // Skip external layout updates while editor has unsaved changes
-        if (layoutReadyRef.current && isEditDirty?.()) {
+        // Preserve local editor changes, but still drain the reconnect snapshot
+        // below so newly restored agents become visible on the current layout.
+        const shouldApplyLayout = !layoutReadyRef.current || !isEditDirty?.();
+        if (!shouldApplyLayout) {
           console.log('[Webview] Skipping external layout update — editor has unsaved changes');
-          return;
-        }
-        const rawLayout = msg.layout as OfficeLayout | null;
-        const layout = rawLayout && rawLayout.version === 1 ? migrateLayoutColors(rawLayout) : null;
-        if (layout) {
-          os.rebuildFromLayout(layout);
-          onLayoutLoaded?.(layout);
         } else {
-          // Default layout — snapshot whatever OfficeState built
-          onLayoutLoaded?.(os.getLayout());
+          const rawLayout = msg.layout as OfficeLayout | null;
+          const layout = rawLayout && rawLayout.version === 1 ? migrateLayoutColors(rawLayout) : null;
+          if (layout) {
+            os.rebuildFromLayout(layout);
+            onLayoutLoaded?.(layout);
+          } else {
+            // Default layout — snapshot whatever OfficeState built
+            onLayoutLoaded?.(os.getLayout());
+          }
         }
-        // Add buffered agents now that layout (and seats) are correct
-        for (const p of pendingAgents) {
-          os.addAgent(p.id, p.palette, p.hueShift, p.seatId, true, p.folderName);
+        // Add buffered agents now that layout (and seats) are correct.
+        layoutReadyRef.current = true;
+        for (const id of pendingAgents) {
+          const fleet = agentDetailsRef.current[id];
+          if (fleet) {
+            syncFleetCharacter(os, id, fleet, true);
+            continue;
+          }
+          const presentation = presentationById.get(id);
+          os.addAgent(
+            id,
+            presentation?.palette,
+            presentation?.hueShift,
+            presentation?.seatId,
+            true,
+            presentation?.folderName,
+          );
         }
         pendingAgents = [];
-        layoutReadyRef.current = true;
         setLayoutReady(true);
         if (msg.wasReset) {
           setLayoutWasReset(true);
@@ -186,11 +277,24 @@ export function useExtensionMessages(
       } else if (msg.type === 'agentCreated') {
         const id = msg.id as number;
         const folderName = msg.folderName as string | undefined;
+        const fleet = msg.fleet as FleetAgentMeta | undefined;
+        presentationById.set(id, { folderName });
+        if (fleet) {
+          replaceAgentDetail(id, fleet);
+          if (!layoutReadyRef.current && !pendingAgents.includes(id)) pendingAgents.push(id);
+          syncFleetCharacter(os, id, fleet);
+          if (!isFleetChild(fleet) && fleet.status !== 'disconnected') {
+            setSelectedAgent(id);
+          }
+          if (os.characters.has(id)) saveAgentSeats(os);
+          return;
+        }
+
         const isTeammate = msg.isTeammate as boolean | undefined;
         const teammateName = msg.teammateName as string | undefined;
         const teammateParentId = msg.parentAgentId as number | undefined;
         const teamName = msg.teamName as string | undefined;
-        setAgents((prev) => (prev.includes(id) ? prev : [...prev, id]));
+        setAgentListed(id, true);
         // Don't auto-select teammates (keep focus on lead)
         if (!isTeammate) {
           setSelectedAgent(id);
@@ -213,10 +317,16 @@ export function useExtensionMessages(
           os.addAgent(id, undefined, undefined, undefined, undefined, folderName);
         }
         saveAgentSeats(os);
+      } else if (msg.type === 'agentFleetUpdated') {
+        const id = msg.id as number;
+        const fleet = msg.fleet as FleetAgentMeta;
+        replaceAgentDetail(id, fleet);
+        syncFleetCharacter(os, id, fleet);
       } else if (msg.type === 'agentClosed') {
         const id = msg.id as number;
-        setAgents((prev) => prev.filter((a) => a !== id));
-        setSelectedAgent((prev) => (prev === id ? null : prev));
+        setAgentListed(id, false);
+        removeAgentDetail(id);
+        presentationById.delete(id);
         setAgentTools((prev) => {
           if (!(id in prev)) return prev;
           const next = { ...prev };
@@ -246,27 +356,26 @@ export function useExtensionMessages(
           { palette?: number; hueShift?: number; seatId?: string }
         >;
         const folderNames = (msg.folderNames || {}) as Record<number, string>;
-        // Buffer agents — they'll be added in layoutLoaded after seats are built
+        const details = (msg.agentDetails || {}) as Record<number, FleetAgentMeta>;
+        replaceAgentDetails(details);
+        // Buffer every identity so a status update before layoutLoaded can change
+        // whether it materializes without losing its stable metadata.
         for (const id of incoming) {
           const m = meta[id];
-          pendingAgents.push({
-            id,
+          presentationById.set(id, {
             palette: m?.palette,
             hueShift: m?.hueShift,
             seatId: m?.seatId,
             folderName: folderNames[id],
           });
-        }
-        setAgents((prev) => {
-          const ids = new Set(prev);
-          const merged = [...prev];
-          for (const id of incoming) {
-            if (!ids.has(id)) {
-              merged.push(id);
-            }
+          if (!pendingAgents.includes(id)) pendingAgents.push(id);
+          const fleet = details[id];
+          if (fleet) {
+            syncFleetCharacter(os, id, fleet, true);
+          } else {
+            setAgentListed(id, true);
           }
-          return merged.sort((a, b) => a - b);
-        });
+        }
       } else if (msg.type === 'agentToolStart') {
         const id = msg.id as number;
         const toolId = msg.toolId as string;
@@ -351,7 +460,17 @@ export function useExtensionMessages(
         setSelectedAgent(id);
       } else if (msg.type === 'agentStatus') {
         const id = msg.id as number;
-        const status = msg.status as string;
+        const status = msg.status as AgentActivityStatus;
+        const fleet = agentDetailsRef.current[id];
+        if (fleet) {
+          const nextFleet = {
+            ...fleet,
+            status,
+            activity: msg.activity as string | undefined,
+          };
+          replaceAgentDetail(id, nextFleet);
+          syncFleetCharacter(os, id, nextFleet);
+        }
         setAgentStatuses((prev) => {
           if (status === 'active') {
             if (!(id in prev)) return prev;
@@ -361,8 +480,8 @@ export function useExtensionMessages(
           }
           return { ...prev, [id]: status };
         });
-        os.setAgentActive(id, status === 'active');
-        if (status === 'waiting') {
+        if (!fleet) os.setAgentActive(id, status === 'active');
+        if (!fleet && status === 'waiting') {
           os.showWaitingBubble(id, msg.awaitingInput === true);
           playDoneSound();
         }
@@ -566,6 +685,7 @@ export function useExtensionMessages(
     selectedAgent,
     agentTools,
     agentStatuses,
+    agentDetails,
     subagentTools,
     subagentCharacters,
     layoutReady,

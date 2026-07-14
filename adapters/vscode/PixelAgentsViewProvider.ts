@@ -31,6 +31,7 @@ import {
 } from '../../server/src/assetLoader.js';
 import { readConfig, writeConfig } from '../../server/src/configPersistence.js';
 import { setTerminalAdapter } from '../../server/src/fileWatcher.js';
+import { fleetMetaFromAgent,FleetRuntime } from '../../server/src/fleetRuntime.js';
 import type { LayoutWatcher } from '../../server/src/layoutPersistence.js';
 import {
   readLayoutFromFile,
@@ -79,6 +80,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
   // Shared agent lifecycle core (timer Maps, scanners, hook handler, dismissal tracker)
   private runtime: AgentRuntime;
+  private fleetRuntime: FleetRuntime;
 
   // Global session scanning dismissal tracking
   private globalDismissedFiles = new Set<string>();
@@ -117,6 +119,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         parentAgentId: agent.leadAgentId,
         teamName: agent.teamName,
         hooksOnly: agent.hooksOnly || undefined,
+        fleet: fleetMetaFromAgent(agent),
       });
     });
     this.store.on('agentRemoved', (id) => {
@@ -130,6 +133,8 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
 
     // Create shared runtime (owns timer Maps, scanners, hook handler, dismissal tracker)
     this.runtime = new AgentRuntime(this.store, claudeProvider);
+    this.fleetRuntime = new FleetRuntime(this.store);
+    this.fleetRuntime.start();
 
     this.initServer();
   }
@@ -168,7 +173,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     });
 
     this.pixelAgentsServer
-      .start({ store: this.store, embedded: true })
+      .start({ store: this.store, fleetRuntime: this.fleetRuntime, embedded: true })
       .then((config) => {
         // Server always starts regardless of hooks-enabled state.
         // It's the foundation for WebSocket transport and health monitoring.
@@ -236,7 +241,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
         }
       } else if (message.type === 'closeAgent') {
         const agent = this.store.get(message.id);
-        if (agent) {
+        if (agent && !agent.fleetKey) {
           if (agent.terminalRef) {
             agent.terminalRef.dispose();
           } else {
@@ -296,7 +301,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           }
           const toRemove: number[] = [];
           for (const [id, agent] of this.store) {
-            if (agent.isExternal && !workspaceDirs.has(agent.projectDir)) {
+            if (agent.isExternal && !agent.fleetKey && !workspaceDirs.has(agent.projectDir)) {
               toRemove.push(id);
             }
           }
@@ -342,7 +347,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
           this.runtime.projectScanTimer,
           this.runtime.activeAgentId,
         );
-        // Register all restored agents with hook handler
+        // Register restored agents; AgentRuntime excludes fleet projections.
         for (const agent of this.store.values()) {
           this.runtime.registerAgent(agent.sessionId, agent.id);
         }
@@ -798,6 +803,7 @@ export class PixelAgentsViewProvider implements vscode.WebviewViewProvider {
     this.pixelAgentsServer?.stop();
     this.pixelAgentsServer = null;
     this.runtime.dispose();
+    this.fleetRuntime.dispose();
     this.layoutWatcher?.dispose();
     this.layoutWatcher = null;
     this.store.dispose();
