@@ -9,6 +9,7 @@ const LEASE_TTL_MS = 4_000;
 const RECENT_WINDOW_MS = 2 * 60_000;
 const RUNNING_WINDOW_MS = 15_000;
 const MAX_CANDIDATES = 64;
+const MAX_SEQUENCE_TIMESTAMP = Math.floor((Number.MAX_SAFE_INTEGER - 1) / 2);
 
 interface ThreadRow {
   id: string;
@@ -48,7 +49,14 @@ function safeText(value: unknown): string | undefined {
 }
 
 function safeTimestamp(value: unknown): number | undefined {
-  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return undefined;
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > MAX_SEQUENCE_TIMESTAMP
+  ) {
+    return undefined;
+  }
   return value;
 }
 
@@ -147,14 +155,15 @@ function projectThreads(
     const parent = parentId ? identityByThread.get(parentId) : undefined;
     const projectLabel = thread.cwd ? basename(thread.cwd) || undefined : undefined;
     const role = thread.agent_role ?? thread.agent_nickname ?? undefined;
+    const status = context.now - thread.updated_at_ms <= RUNNING_WINDOW_MS ? 'running' : 'idle';
     return {
       ...identity,
       ...(parent ? { parent } : {}),
       ...(role ? { role } : {}),
       ...(thread.model ? { model: thread.model } : {}),
       ...(projectLabel ? { projectLabel } : {}),
-      status: context.now - thread.updated_at_ms <= RUNNING_WINDOW_MS ? 'running' : 'idle',
-      sequence: thread.updated_at_ms,
+      status,
+      sequence: 2 * thread.updated_at_ms + (status === 'idle' ? 1 : 0),
       updatedAt: thread.updated_at_ms,
     };
   });

@@ -27,6 +27,7 @@ interface ChildArtifact {
   mtimeMs: number;
   size: number;
 }
+type ArtifactClassification = 'live' | 'inFlight' | 'terminal';
 
 function sequenceFromTimestamp(timestamp: number): number {
   return Math.max(0, Math.floor(timestamp));
@@ -72,6 +73,10 @@ async function collectArtifacts(root: string): Promise<ChildArtifact[]> {
     let entries;
     try {
       entries = (await readdir(current.path, { withFileTypes: true }))
+        .filter(
+          (entry) =>
+            entry.isDirectory() || (entry.isFile() && extname(entry.name) === '.jsonl'),
+        )
         .sort((left, right) => left.name.localeCompare(right.name))
         .slice(0, MAX_DIRECTORY_ENTRIES);
     } catch {
@@ -85,7 +90,6 @@ async function collectArtifacts(root: string): Promise<ChildArtifact[]> {
         if (current.depth < MAX_DEPTH) queue.push({ path, depth: current.depth + 1 });
         continue;
       }
-      if (!entry.isFile() || extname(entry.name) !== '.jsonl') continue;
 
       try {
         const metadata = await stat(path);
@@ -121,7 +125,7 @@ async function readTail(artifact: ChildArtifact): Promise<string> {
   }
 }
 
-function classifyTail(tail: string): 'live' | 'terminal' | undefined {
+function classifyTail(tail: string): ArtifactClassification | undefined {
   const lines = tail.split(/\r?\n/);
   for (let index = lines.length - 1; index >= 0; index -= 1) {
     const line = lines[index].trim();
@@ -139,7 +143,7 @@ function classifyTail(tail: string): 'live' | 'terminal' | undefined {
             typeof item === 'object' &&
             (item as Record<string, unknown>).type === 'toolCall',
         );
-        return message.stopReason === 'toolUse' || hasToolCall ? 'live' : 'terminal';
+        return message.stopReason === 'toolUse' || hasToolCall ? 'inFlight' : 'terminal';
       }
       if (role === 'toolResult' || role === 'user') return 'live';
     } catch {
@@ -196,7 +200,7 @@ export const scanOmpRecovery: RecoveryScanner = async (context): Promise<FleetSn
     const sessionId = sessionIdFromFile(registry.sessionFile);
     if (!sessionId) continue;
     const projectLabel = basename(registry.cwd) || registry.cwd;
-    let mainClassification: 'live' | 'terminal' | undefined;
+    let mainClassification: ArtifactClassification | undefined;
     try {
       mainClassification = classifyTail(
         await readTail({
@@ -210,7 +214,7 @@ export const scanOmpRecovery: RecoveryScanner = async (context): Promise<FleetSn
       // Fall back to bounded activity age when the active session tail cannot be read.
     }
     const mainStatus =
-      mainClassification === 'live'
+      mainClassification === 'live' || mainClassification === 'inFlight'
         ? 'running'
         : mainClassification === 'terminal'
           ? 'idle'
@@ -227,13 +231,13 @@ export const scanOmpRecovery: RecoveryScanner = async (context): Promise<FleetSn
 
     const artifactRoot = join(dirname(registry.sessionFile), basename(registry.sessionFile, '.jsonl'));
     for (const artifact of await collectArtifacts(artifactRoot)) {
-      let classification: 'live' | 'terminal' | undefined;
+      let classification: ArtifactClassification | undefined;
       try {
         classification = classifyTail(await readTail(artifact));
       } catch {
         continue;
       }
-      if (classification !== 'live') continue;
+      if (classification === undefined || classification === 'terminal') continue;
 
       const identity = identityFromArtifact(sessionId, artifact.relativePath);
       agents.push({
@@ -241,7 +245,8 @@ export const scanOmpRecovery: RecoveryScanner = async (context): Promise<FleetSn
         ...identity,
         role: identity.agentId,
         projectLabel,
-        status: statusFromAge(context.now, artifact.mtimeMs),
+        status:
+          classification === 'inFlight' ? 'running' : statusFromAge(context.now, artifact.mtimeMs),
         sequence: sequenceFromTimestamp(artifact.mtimeMs),
         updatedAt: artifact.mtimeMs,
       });

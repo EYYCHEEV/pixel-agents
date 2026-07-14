@@ -209,6 +209,36 @@ describe('scanOmpRecovery', () => {
     ).resolves.toMatchObject({ agents: [] });
   });
 
+  it('ignores non-JSON artifacts when bounding and retains old in-flight tools', async () => {
+    const { artifactRoot } = await createSession('ttys004', 'busy-session');
+    await mkdir(artifactRoot, { recursive: true });
+    for (let index = 0; index < 129; index += 1) {
+      await writeFile(
+        join(artifactRoot, `${String(index).padStart(3, '0')}.bash.log`),
+        'tool output',
+      );
+    }
+    await createArtifact(
+      artifactRoot,
+      'WaitingOnTool.jsonl',
+      JSON.stringify({
+        type: 'message',
+        message: {
+          role: 'assistant',
+          stopReason: 'toolUse',
+          content: [{ type: 'toolCall', name: 'bash' }],
+        },
+      }),
+      NOW - 10 * 60_000,
+    );
+
+    const snapshot = await scanOmpRecovery(context(['ttys004']));
+
+    expect(snapshot.agents.find((agent) => agent.agentId === 'WaitingOnTool')).toMatchObject({
+      status: 'running',
+    });
+  });
+
   it('bounds child selection to the newest 64 artifacts', async () => {
     const { artifactRoot } = await createSession('ttys003', 'bounded-session');
     for (let index = 0; index < 70; index += 1) {

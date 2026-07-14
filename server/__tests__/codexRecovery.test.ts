@@ -5,6 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { AgentStateStore } from '../src/agentStateStore.js';
+import { FleetRuntime } from '../src/fleetRuntime.js';
 import { scanCodexRecovery } from '../src/recovery/codexRecovery.js';
 import type { RecoveryScanContext } from '../src/recovery/types.js';
 
@@ -108,11 +110,15 @@ function insertEdge(
     .run(parentThreadId, childThreadId, status);
 }
 
-function context(homeDir: string, hasCodexProcess = true): RecoveryScanContext {
+function context(
+  homeDir: string,
+  hasCodexProcess = true,
+  now = NOW,
+): RecoveryScanContext {
   return {
     homeDir,
     hostId: 'fixture-host',
-    now: NOW,
+    now,
     processes: hasCodexProcess ? [{ pid: 42, command: '/usr/local/bin/codex --quiet' }] : [],
     activeTerminalKeys: new Set(),
   };
@@ -185,7 +191,7 @@ describe('scanCodexRecovery', () => {
         agentId: 'grandchild-thread',
         parent: { sessionId: 'root-thread', agentId: 'child-thread' },
         status: 'running',
-        sequence: NOW - 2_000,
+        sequence: 2 * (NOW - 2_000),
         updatedAt: NOW - 2_000,
       }),
       expect.objectContaining({
@@ -206,6 +212,28 @@ describe('scanCodexRecovery', () => {
       }),
     ]);
     expect(JSON.stringify(first)).not.toContain(promptSecret);
+  });
+
+  it('advances age-derived status through FleetRuntime ordering', async () => {
+    const homeDir = temporaryHome();
+    const database = createDatabase(homeDir);
+    insertThread(database, { id: 'exited-thread', updatedAt: NOW - 1_000 });
+    database.close();
+
+    const running = await scanCodexRecovery(context(homeDir));
+    const idle = await scanCodexRecovery(context(homeDir, true, NOW + 15_001));
+    const store = new AgentStateStore();
+    const runtime = new FleetRuntime(store);
+
+    runtime.applySnapshot(running, NOW);
+    expect([...store.values()][0]?.fleetStatus).toBe('running');
+    expect(idle.agents[0]?.sequence).toBeGreaterThan(running.agents[0]?.sequence ?? 0);
+
+    expect(runtime.applySnapshot(idle, NOW + 15_001)).toMatchObject({
+      updated: 1,
+      ignored: 0,
+    });
+    expect([...store.values()][0]?.fleetStatus).toBe('idle');
   });
 
   it('filters archived and stale threads and ignores closed lineage edges', async () => {
