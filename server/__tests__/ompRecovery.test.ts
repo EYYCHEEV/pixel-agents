@@ -4,6 +4,8 @@ import { basename, join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { AgentStateStore } from '../src/agentStateStore.js';
+import { FleetRuntime } from '../src/fleetRuntime.js';
 import { scanOmpRecovery } from '../src/recovery/ompRecovery.js';
 import type { RecoveryScanContext } from '../src/recovery/types.js';
 
@@ -142,7 +144,39 @@ describe('scanOmpRecovery', () => {
       parent: { sessionId: 'lineage-session', agentId: 'Reviewer' },
       status: 'parked',
     });
-    expect(JSON.stringify(snapshot)).not.toMatch(/private prompt|secret response|hidden tool output/);
+    expect(JSON.stringify(snapshot)).not.toMatch(
+      /private prompt|secret response|hidden tool output/,
+    );
+  });
+
+  it('advances age-derived status through FleetRuntime ordering', async () => {
+    const { artifactRoot } = await createSession('ttys-age', 'aging-session');
+    await createArtifact(
+      artifactRoot,
+      'AgingChild.jsonl',
+      '{"type":"message","message":{"role":"user"}}\n',
+      NOW - 1_000,
+    );
+    const store = new AgentStateStore();
+    const runtime = new FleetRuntime(store);
+
+    const running = await scanOmpRecovery(context(['ttys-age']));
+    runtime.applySnapshot(running, NOW);
+    const idle = await scanOmpRecovery({
+      ...context(['ttys-age']),
+      now: NOW + 15_001,
+    });
+
+    expect(idle.agents.find((agent) => agent.agentId === 'AgingChild')?.sequence).toBeGreaterThan(
+      running.agents.find((agent) => agent.agentId === 'AgingChild')?.sequence ?? 0,
+    );
+    expect(runtime.applySnapshot(idle, NOW + 15_001)).toMatchObject({
+      updated: 1,
+      ignored: 1,
+    });
+    expect(
+      [...store.values()].find((agent) => agent.fleetAgentId === 'AgingChild')?.fleetStatus,
+    ).toBe('idle');
   });
 
   it('omits completed child artifacts while retaining in-progress siblings', async () => {

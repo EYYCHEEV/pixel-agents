@@ -29,8 +29,9 @@ interface ChildArtifact {
 }
 type ArtifactClassification = 'live' | 'inFlight' | 'terminal';
 
-function sequenceFromTimestamp(timestamp: number): number {
-  return Math.max(0, Math.floor(timestamp));
+function sequenceFromTimestamp(timestamp: number, status: FleetAgentProjection['status']): number {
+  const statusOffset = status === 'idle' ? 1 : status === 'parked' ? 2 : 0;
+  return Math.max(0, Math.floor(timestamp) * 3 + statusOffset);
 }
 
 function sessionIdFromFile(sessionFile: string): string | undefined {
@@ -43,7 +44,8 @@ function sessionIdFromFile(sessionFile: string): string | undefined {
 async function readRegistry(path: string): Promise<RegistryRecord | undefined> {
   try {
     const metadata = await stat(path);
-    if (!metadata.isFile() || metadata.size === 0 || metadata.size > MAX_REGISTRY_BYTES) return undefined;
+    if (!metadata.isFile() || metadata.size === 0 || metadata.size > MAX_REGISTRY_BYTES)
+      return undefined;
 
     const lines = (await readFile(path, 'utf8')).split(/\r?\n/);
     const cwd = lines[0]?.trim();
@@ -74,8 +76,7 @@ async function collectArtifacts(root: string): Promise<ChildArtifact[]> {
     try {
       entries = (await readdir(current.path, { withFileTypes: true }))
         .filter(
-          (entry) =>
-            entry.isDirectory() || (entry.isFile() && extname(entry.name) === '.jsonl'),
+          (entry) => entry.isDirectory() || (entry.isFile() && extname(entry.name) === '.jsonl'),
         )
         .sort((left, right) => left.name.localeCompare(right.name))
         .slice(0, MAX_DIRECTORY_ENTRIES);
@@ -106,9 +107,12 @@ async function collectArtifacts(root: string): Promise<ChildArtifact[]> {
     }
   }
 
-  return artifacts.sort((left, right) =>
-    right.mtimeMs - left.mtimeMs || left.relativePath.localeCompare(right.relativePath),
-  ).slice(0, MAX_CHILDREN);
+  return artifacts
+    .sort(
+      (left, right) =>
+        right.mtimeMs - left.mtimeMs || left.relativePath.localeCompare(right.relativePath),
+    )
+    .slice(0, MAX_CHILDREN);
 }
 
 async function readTail(artifact: ChildArtifact): Promise<string> {
@@ -160,7 +164,10 @@ function statusFromAge(now: number, mtimeMs: number): FleetAgentProjection['stat
   return 'parked';
 }
 
-function identityFromArtifact(sessionId: string, relativePath: string): Pick<FleetAgentProjection, 'agentId' | 'parent'> {
+function identityFromArtifact(
+  sessionId: string,
+  relativePath: string,
+): Pick<FleetAgentProjection, 'agentId' | 'parent'> {
   const segments = relativePath.split(sep);
   const agentId = basename(segments.at(-1)!, '.jsonl');
   const parentAgentId = segments.length === 1 ? 'Main' : segments.at(-2)!;
@@ -195,7 +202,8 @@ export const scanOmpRecovery: RecoveryScanner = async (context): Promise<FleetSn
       relativeSessionPath === '..' ||
       relativeSessionPath.startsWith(`..${sep}`) ||
       isAbsolute(relativeSessionPath)
-    ) continue;
+    )
+      continue;
 
     const sessionId = sessionIdFromFile(registry.sessionFile);
     if (!sessionId) continue;
@@ -225,11 +233,14 @@ export const scanOmpRecovery: RecoveryScanner = async (context): Promise<FleetSn
       role: 'main',
       projectLabel,
       status: mainStatus,
-      sequence: sequenceFromTimestamp(registry.mtimeMs),
+      sequence: sequenceFromTimestamp(registry.mtimeMs, mainStatus),
       updatedAt: registry.mtimeMs,
     });
 
-    const artifactRoot = join(dirname(registry.sessionFile), basename(registry.sessionFile, '.jsonl'));
+    const artifactRoot = join(
+      dirname(registry.sessionFile),
+      basename(registry.sessionFile, '.jsonl'),
+    );
     for (const artifact of await collectArtifacts(artifactRoot)) {
       let classification: ArtifactClassification | undefined;
       try {
@@ -240,14 +251,15 @@ export const scanOmpRecovery: RecoveryScanner = async (context): Promise<FleetSn
       if (classification === undefined || classification === 'terminal') continue;
 
       const identity = identityFromArtifact(sessionId, artifact.relativePath);
+      const status =
+        classification === 'inFlight' ? 'running' : statusFromAge(context.now, artifact.mtimeMs);
       agents.push({
         sessionId,
         ...identity,
         role: identity.agentId,
         projectLabel,
-        status:
-          classification === 'inFlight' ? 'running' : statusFromAge(context.now, artifact.mtimeMs),
-        sequence: sequenceFromTimestamp(artifact.mtimeMs),
+        status,
+        sequence: sequenceFromTimestamp(artifact.mtimeMs, status),
         updatedAt: artifact.mtimeMs,
       });
     }
